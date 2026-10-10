@@ -47,8 +47,9 @@ Hand over the iPhone: "Open <demo app> and just use it like normal."
 - Read the plain-English summary aloud.
 
 **1:30 block it (judge or B)**
-"Click that company to block it. Now close the app and open it again."
-- A click on the bubble blocks the company; the bar at the bottom says what was blocked and offers Undo. A second click unblocks.
+"Click that company. This is who it is, and these are the servers the app asked for. Now block it, close the app and open it again."
+- A click on the bubble opens the company's panel: a plain explanation (from our tracker list at once, replaced by the AI's when it arrives), every server name with its count, and the block buttons. "Block <company>" blocks all of it; the same button unblocks. Single server names can be blocked too.
+- Keep the panel open after blocking: the "refused ×N" numbers climb as the app keeps trying. `Esc` closes it.
 - A block stops **new** connections. What the app already has open stays open until it reconnects, so the reopen is part of the demo, not a workaround.
 - After reopening: the bubble goes grey, and the blocked counter keeps climbing: the app keeps trying.
 - The app still works.

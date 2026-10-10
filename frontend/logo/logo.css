@@ -1,0 +1,18 @@
+/* The logo preview page at /logo. Fonts, colours and the unit come from ../app.css. */
+body.logo-page { display: block; overflow: auto; padding: calc(var(--u) * 1.6) calc(var(--u) * 2.4); }
+.defs { position: absolute; width: 0; height: 0; }
+.logo-page h1 { margin: 0; font-size: calc(var(--u) * 2.2); font-weight: 800; letter-spacing: -0.02em; }
+.lead { margin: 0.4em 0 1.2em; color: var(--dim); max-width: 60em; }
+.lead a { color: var(--accent); }
+.variants { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(var(--u) * 1.4); padding: 0; }
+.variant { background: var(--panel); border: 1px solid var(--line); border-radius: calc(var(--u) * 0.9); padding: calc(var(--u) * 1.2); display: flex; flex-direction: column; gap: calc(var(--u) * 0.9); }
+.variant.chosen { border-color: var(--accent); }
+.variant h2 { margin: 0; font-size: calc(var(--u) * 1.5); display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
+.variant p { margin: 0; color: var(--dim); font-size: calc(var(--u) * 1.05); min-height: 2.7em; }
+.inuse { color: var(--accent); font-size: calc(var(--u) * 0.9); font-weight: 600; }
+.sizes { display: flex; align-items: center; gap: calc(var(--u) * 1.4); background: var(--bg); border-radius: calc(var(--u) * 0.6); padding: calc(var(--u) * 0.9) calc(var(--u) * 1.1); }
+.sizes.light { background: #e9ecf2; }
+.s16 { width: 16px; height: 16px; flex: none; }
+.s32 { width: 32px; height: 32px; flex: none; }
+.s64 { width: 64px; height: 64px; flex: none; }
+.big { width: 100%; height: calc(var(--u) * 15); background: var(--bg); border-radius: calc(var(--u) * 0.6); }

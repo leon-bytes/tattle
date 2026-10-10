@@ -1,5 +1,5 @@
 {
-  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Four groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), phone-only SDK hosts the web-centred Disconnect list lacks, and the own servers of a few well-known apps seen in live tests (vendor: Netflix, Discord, OpenAI; Reddit's media hosts, as content like reddit.com in the list). Everything else unknown is left to the AI classifier.",
+  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Five groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), phone-only SDK hosts the web-centred Disconnect list lacks, the own servers of a few well-known apps seen in live tests (vendor: Netflix, Discord, OpenAI, and Reddit, whose two tracking-pixel hosts stay social as in the list), and Microsoft: its sign-in hosts (content, like microsoft.com in the list), and LinkedIn under its own name instead of its owner's (the list files linkedin.com as Microsoft, social). Everything else unknown is left to the AI classifier.",
   "domains": {
     "apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
     "push.apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
@@ -60,7 +60,16 @@
     "chatgpt.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
     "oaistatic.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
     "oaiusercontent.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
-    "redd.it": {"company": "Reddit", "category": "content", "source": "override"},
-    "redditmedia.com": {"company": "Reddit", "category": "content", "source": "override"}
+    "reddit.com": {"company": "Reddit", "category": "vendor", "source": "override"},
+    "redd.it": {"company": "Reddit", "category": "vendor", "source": "override"},
+    "redditmedia.com": {"company": "Reddit", "category": "vendor", "source": "override"},
+    "alb.reddit.com": {"company": "Reddit", "category": "social", "source": "override"},
+    "pixel-config.reddit.com": {"company": "Reddit", "category": "social", "source": "override"},
+
+    "microsoftonline.com": {"company": "Microsoft", "category": "content", "source": "override"},
+    "msftauth.net": {"company": "Microsoft", "category": "content", "source": "override"},
+    "msauth.net": {"company": "Microsoft", "category": "content", "source": "override"},
+    "linkedin.com": {"company": "LinkedIn", "category": "social", "source": "override"},
+    "licdn.com": {"company": "LinkedIn", "category": "social", "source": "override"}
   }
 }

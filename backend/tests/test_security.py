@@ -44,12 +44,24 @@ def test_show_screen_never_builds_markup_from_data():
         assert "http://" not in source.replace("http://www.w3.org/2000/svg", "") and "https://" not in source
 
 
+def test_logo_page_is_plain_markup():
+    """The logo preview at /logo: drawings and a stylesheet, no script at all."""
+    markup, style = (main.FRONTEND / "logo" / "index.html").read_text(), (main.FRONTEND / "logo" / "logo.css").read_text()
+    assert "<script" not in markup and "<style" not in markup and " style=" not in markup and not re.search(r"\son\w+=", markup)
+    for source in (markup, style):
+        assert "http://" not in source and "https://" not in source and "url(" not in source
+
+
 def test_show_screen_loads_only_from_this_backend(client):
     for path in ("/", "/app.js", "/app.css"):
         policy = client.get(path).headers["content-security-policy"]
         assert "default-src 'none'" in policy and "script-src 'self'" in policy and "unsafe" not in policy
         assert "connect-src 'self' ws://testserver wss://testserver;" in policy and "frame-ancestors 'self'" in policy
+        assert "img-src 'self' data:;" in policy  # the tab icon is drawn from the page's own logo; nothing else is loosened
     assert "ws://" not in client.get("/", headers={"Host": "bad host\"; script-src *"}).headers["content-security-policy"]
+    logo = client.get("/logo/")
+    assert logo.status_code == 200 and "script-src 'self'" in logo.headers["content-security-policy"]
+    assert client.get("/logo", follow_redirects=False).headers["location"].endswith("/logo/")
 
 
 def test_pages_run_only_their_own_script(client):

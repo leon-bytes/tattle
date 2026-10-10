@@ -79,6 +79,7 @@ class State:
         self.summary: dict | None = None
         self.summarized_at = 0
         self.label_ai: dict | None = None  # the AI's sentence for the label check of one session and label
+        self.explained: dict[tuple, dict] = {}  # the AI's explanation of a company, per (company, phone, session start)
         self.ai_results: dict[str, dict] = dict(self.ai_seed)  # every name the AI was asked about, with its answer
         self.pending: dict[str, None] = {}     # insertion-ordered set of names to ask about
 

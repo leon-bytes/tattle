@@ -2,7 +2,7 @@
 
 # Tattle: project guide
 
-**Last updated: Saturday 2026-10-10, 17:45 local time.**
+**Last updated: Saturday 2026-10-10, 19:03 local time.**
 
 ## Note to an AI reader
 
@@ -69,7 +69,7 @@ Judges score five things: **Originality**, **Technical Understanding**, **Functi
 | Track | Why we fit | What it needs from us |
 | --- | --- | --- |
 | Best Use of Provided Backend (a Postgres database the organizers provide) | The database does real work: a copy of the tracker list, session history, a cache of AI answers, a "top companies per app" view | The history view working on screen (backend side is built; the screen is not) |
-| Best Use of Open Source AI | An open model classifies names no list knows, writes the summary, and fact-checks privacy labels | A clear before/after: lists only versus with AI (the AI module is not written yet) |
+| Best Use of Open Source AI | An open model classifies names no list knows, writes the summary, fact-checks privacy labels, and explains a company in the detail panel | A clear before/after: lists only versus with AI. The detail panel shows exactly that, sentence from the list first and the AI's text after it (the AI module is not written yet) |
 | Best Use of Graphics Technologies (ROCm) | The model is served on an AMD GPU (a Radeon PRO W7900 with 48 GB of video memory) through ROCm | Notes and screenshots of the ROCm setup, and real numbers such as tokens per second (not done yet) |
 | Best Design / Prettiest Hack | The live graph is the showpiece | A consistent palette and type. The show screen exists since Saturday 17:30 (section 6.7); its look was chosen by BOX from the architecture diagram's colours and has not been reviewed by the AI owner, who holds the visual identity |
 
@@ -205,6 +205,9 @@ Plain-word definitions of everything the project relies on. Later sections use t
 - **Container, podman.** A lightweight way to run a program in isolation. We use podman only to run a throwaway Postgres for tests.
 - **React, Vite.** The JavaScript library and build tool the frontend was first planned in. We did not use them: the show screen is plain HTML, CSS and JavaScript with no build step (decision 32a in section 8).
 - **Show screen, operator console, fallback view.** Our three pages. The **show screen** (`/`) is what the judges look at: the phone in the middle with a bubble per company. The **operator console** (`/debug`) is the plain page with every control and a table of lookups. The **fallback view** (`/present`) is a plain presenter page in case the show screen fails.
+- **Detail panel.** The large panel the show screen opens when someone clicks a company's bubble: who the company is, every server name the phone asked for, and the buttons to block.
+- **SVG, inline SVG.** SVG is a way to describe a drawing as shapes (circles, paths) in text. "Inline" means the drawing is written directly into the page's HTML instead of being a separate image file. Our logo is one.
+- **Browser-tab icon (favicon), `data:` address.** The small picture a browser shows on a tab. A `data:` address is an "address" that contains the file itself instead of pointing to one; our page builds its tab icon that way from its own logo.
 - **Headless browser.** A real browser run by a script, without a window, used to load a page, click on it and save screenshots. We use the VM's Firefox this way to check the show screen.
 - **LLM, OpenAI-compatible API, ROCm.** An LLM is a large language model. "OpenAI-compatible" means the model server speaks the widely used `/chat/completions` request format. ROCm is AMD's software for running models on AMD graphics cards.
 - **Ollama.** A program that runs language models on a machine and offers them over an OpenAI-compatible API. Ours runs on the AMD server and listens only on that server's own loopback address.
@@ -304,9 +307,9 @@ Follow one name from a phone to the screen. Step numbers are referred to later.
 
 8. **In the background.** If an AI module is present, a background task asks the model about unknown names in small batches and broadcasts a `classified` message when it gets an answer; the screens then upgrade the hits they already show. While a session runs, a summary sentence is broadcast about every 3 seconds.
 
-**When a company is blocked.** Someone clicks the company's bubble on the show screen (or "block" on `/debug`). The page sends `POST /api/block {"company": "AppLovin"}`. The backend adds the company to its block set and from then on lists all known names of that company in `/api/blocklist`. The sensor fetches that list every second. The next time the app **asks** for `ms.applovin.com`, step 3 answers NXDOMAIN; the app cannot connect; the event arrives as a hit with `blocked: true` and reason `user`. Apps retry, so blocked hits keep arriving. The rest of the app keeps working.
+**When a company is blocked.** Someone clicks the company's bubble on the show screen and then "Block AppLovin" in the detail panel that opens (or "block" on `/debug`). The page sends `POST /api/block {"company": "AppLovin"}`. The backend adds the company to its block set and from then on lists all known names of that company in `/api/blocklist`. The sensor fetches that list every second. The next time the app **asks** for `ms.applovin.com`, step 3 answers NXDOMAIN; the app cannot connect; the event arrives as a hit with `blocked: true` and reason `user`. Apps retry, so blocked hits keep arriving. The rest of the app keeps working.
 
-**A block stops new connections, not open ones.** This matters and was learned in the live test. The sensor only gets a say when the phone asks for a name. A connection that is already open never asks again, and a phone reuses an answer it already has until that answer's lifetime runs out. So right after a block, an app can keep talking over what it already has. Two things shorten this: the 10-second lifetime the sensor puts on every answer (the phone must ask again within seconds), and closing and reopening the app (which drops its open connections). Also, an app uses several names: blocking one name of a company leaves its other names alone, which is why the demo blocks the **company**.
+**A block stops new connections, not open ones.** This matters and was learned in the live test. The sensor only gets a say when the phone asks for a name. A connection that is already open never asks again, and a phone reuses an answer it already has until that answer's lifetime runs out. So right after a block, an app can keep talking over what it already has. Two things shorten this: the 10-second lifetime the sensor puts on every answer (the phone must ask again within seconds), and closing and reopening the app (which drops its open connections). Also, an app uses several names: blocking one name of a company leaves its other names alone, which is why the demo blocks the **company**. (The detail panel can also block a single server name, `POST /api/block {"domain": "ms.applovin.com"}`; that covers the name and everything under it.)
 
 **When it is a guard-list name.** For example `mask.icloud.com` (Private Relay) or `_dns.resolver.arpa` (the request to upgrade to encrypted DNS). Step 3 answers NXDOMAIN and reports reason `guard`. The phone gives up on that private channel and keeps using plain DNS, which we can see; an iPhone shows the user a notice that Private Relay is off for this network. On screen this is a **hidden-traffic attempt**: counted on its own, never as a blocked tracker and never as a contact to a company.
 
@@ -398,6 +401,7 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | `app/kb.py` | Loads the knowledge base and overrides; looks a name up by walking up its labels; lists a company's domains for blocking |
 | `app/summary.py` | Session statistics, and the template sentence that describes a session |
 | `app/labels.py` | The privacy-label fact-check: finds the label file, counts what the session contacted, applies the verdict rules |
+| `app/explain.py` | "Who is this company?" for the detail panel: collects a company's server names from the lookups on record and builds the plain sentence that needs no model |
 | `app/db.py` | The optional Postgres layer: a write queue drained by one background task, schema set-up, history queries |
 | `app/hub.py` | Sends each message to every connected WebSocket client without ever waiting for a slow one |
 | `app/validate.py` | The checks for untrusted input: is this a plain host name, is this an IP address, cut free text to printable characters |
@@ -417,10 +421,11 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 - **Blocking:** by company or by single domain. Blocking a company blocks every domain the knowledge base assigns to it (and names the AI assigned to it). At most 500 blocks. The `blocked` message lists what each company block covers, and `/debug` shows it in words, with the reminder that a block acts on new connections only.
 - **Sessions:** one at a time: a device, an optional app name, a start time. Starting a new one replaces the old.
 - **Summary:** a few short sentences made to be read aloud, for example: "In 40 seconds, Demo Game contacted 9 companies: 4 advertising (Google, AppLovin, Unity and 1 more), 2 analytics (Sentry, AppsFlyer), and 3 others. 2 lookups were blocked." A company counts once, under the category it was mostly contacted for. Advertising, analytics, social and fingerprinting are named; the rest are "others". It says "contacted", never "sent".
-- **Wipe:** clears devices, hits, blocks, the session, the summary and AI answers from memory, and deletes the running session's rows from the database. It does not delete finished sessions.
+- **Company explanation:** `GET /api/explain` describes one company for the detail panel (7.6a). It answers at once with a sentence built from the knowledge base. If the AI module has `explain_company`, the backend asks it in the background and hands out its text from the next call on. One text per company, phone and session is kept in memory (500 at most) until the next wipe; after a failed call the model is asked again 15 s later at the earliest.
+- **Wipe:** clears devices, hits, blocks, the session, the summary, company explanations and AI answers from memory, and deletes the running session's rows from the database. It does not delete finished sessions.
 - **AI is optional:** if `app/ai.py` is missing or fails to import, the backend runs without it. Its calls happen in background tasks with a 10 s limit; a failure only sets `health.ai` to false.
 - **Health:** broadcast every 5 s and whenever it changes. If `AI_BASE_URL` is set, the backend also asks the model server for its list of models every 15 s and reports whether it answered as `ai_endpoint`: that shows a dead tunnel before any AI call is made.
-- **Memory bounds:** last 5,000 hits; 500 names waiting for the AI; 5,000 remembered AI answers; 256 devices; 50 WebSocket clients, each allowed to fall 2,000 messages behind before it is dropped.
+- **Memory bounds:** last 5,000 hits; 500 names waiting for the AI; 5,000 remembered AI answers; 500 company explanations; 256 devices; 50 WebSocket clients, each allowed to fall 2,000 messages behind before it is dropped.
 
 **Settings** (environment variables; the backend does not read `.env` itself, `start.sh` does):
 
@@ -435,7 +440,7 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | `AI_BASE_URL` | none | the model server's address, used by `ai.py`. If set, the backend checks every 15 s that it answers. With the SSH tunnel: `http://127.0.0.1:8081/v1` |
 | `AI_TOKEN` | none | used by `ai.py`. Ollama needs no key, so the placeholder `unused` is fine |
 
-**Tests:** `backend/tests/`, 103 tests with a Postgres available (89 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
+**Tests:** `backend/tests/`, 116 tests with a Postgres available (102 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the company explanation, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
 
 ### 6.4 Database layer (optional): `backend/app/db.py`, `backend/sql/schema.sql`
 
@@ -463,33 +468,48 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | `fake_sensor.py` | Replays a recorded file of events into the backend with the original timing, standard library only. Options: `--backend`, `--speed N`, `--loop`. It reads the blocklist too, so blocking works in replay mode. This is the development loop for FRONT and AI, and the demo fallback |
 | `selfcheck.py` | End-to-end check without Wi-Fi: starts its own backend and a sensor on loopback, replays the synthetic session, sends real DNS queries through the sensor, checks what arrives on `/ws`, and that the show screen is served at `/` (21 checks) |
 | `build_kb.py` | Downloads Disconnect's `services.json` and writes `data/kb.json`. It tidies company names by one rule for all entries: names written entirely in lowercase get capitals ("reddit" becomes "Reddit"), stray spaces are removed, and a short table holds hand-picked renames; names styled on purpose ("eBay") are left alone. A note at its top lists the choices made and what deserves a second look. Written by BOX as a first version; it belongs to AI |
-| `try_ai.py` | Calls each function of an `ai.py` once with sample data, under the backend's time limit, and checks the shape of the answers. For the AI owner |
+| `try_ai.py` | Calls each function of an `ai.py` once with sample data, under the backend's time limit, and checks the shape of the answers (the two optional functions, `label_check` and `explain_company`, only if they exist). For the AI owner |
 
 ### 6.6 Data: `data/`
 
 - **`kb.json`**: 4,430 domains from Disconnect's list (2,738 advertising, 974 analytics, 429 content, 239 fingerprinting, 50 social), 1,877 companies (52 of the names tidied by the rule above). Licensed CC BY-NC-SA 4.0, like the list it is derived from; credited in the README; non-commercial use only. Never edited by hand: rebuilt with `python3 tools/build_kb.py`.
-- **`kb_overrides.json`**: 57 hand entries in four groups. Apple's system domains as `vendor` (with Apple's advertising hosts as `advertising`); the big content networks (Akamai, Fastly, CloudFront and `amazonaws.com` as "Amazon Web Services") as `content`; phone-only SDK hosts the web-centred list lacks (Firebase, Google's app analytics and app advertising hosts `app-analytics-services.com` and `app-ads-services.com`, AppLovin's second domain, Unity Ads, ironSource, Vungle, Mintegral, InMobi, AppsFlyer's SDK domain); Reddit's media hosts (`redd.it`, `redditmedia.com`) as `content`, like `reddit.com` in the list; and the own servers of three apps seen in the live test, as `vendor`: Netflix (`netflix.com`, `nflxvideo.net`, `fast.com` and others), Discord (`discord.com`, `discord.gg`, `discordapp.net` and others) and OpenAI (`chatgpt.com`, `openai.com`, `oaistatic.com` and others). Other apps' own servers are deliberately left for the AI classifier.
+- **`kb_overrides.json`**: 65 hand entries in five groups. With them the backend knows 4,489 names in all.
+  - Apple's system domains as `vendor` (with Apple's advertising hosts as `advertising`).
+  - The big content networks (Akamai, Fastly, CloudFront and `amazonaws.com` as "Amazon Web Services") as `content`.
+  - Phone-only SDK hosts the web-centred list lacks (Firebase, Google's app analytics and app advertising hosts `app-analytics-services.com` and `app-ads-services.com`, AppLovin's second domain, Unity Ads, ironSource, Vungle, Mintegral, InMobi, AppsFlyer's SDK domain).
+  - The own servers of four apps seen in the live tests, as `vendor`: Netflix (`netflix.com`, `nflxvideo.net`, `fast.com` and others), Discord (`discord.com`, `discord.gg`, `discordapp.net` and others), OpenAI (`chatgpt.com`, `openai.com`, `oaistatic.com` and others) and, since Saturday 18:30, Reddit (`reddit.com`, `redd.it`, `redditmedia.com`). The list files `reddit.com` as `content`, which showed Reddit's own servers as a "CDN" while the Reddit app was the one being used. Because an override also covers every name under it, the two Reddit hosts the list files as trackers (`alb.reddit.com`, `pixel-config.reddit.com`, category `social`) got overrides of their own that keep that category. `redditstatic.com` is untouched: the list files it as `advertising`.
+  - Microsoft, since Saturday 18:30. Its sign-in hosts `microsoftonline.com`, `msftauth.net` and `msauth.net` were unknown; they are now Microsoft, `content`, the category the list gives `microsoft.com`. And `linkedin.com` and `licdn.com` are the company "LinkedIn", `social`. Why: the list files LinkedIn's hosts under their owner, Microsoft, with the category `social`. A phone that loaded only LinkedIn pages therefore showed a bubble "Microsoft, social network", which is wrong about Microsoft and hides LinkedIn. No Microsoft name is `social` any more.
+  - Other apps' own servers are deliberately left for the AI classifier. The file belongs to the AI owner; the Saturday 18:30 entries were made by BOX from what the live screen showed, and are marked in `docs/TEAM.md` for review.
 - **`replays/demo-synthetic.jsonl`**: 274 made-up events over 119 seconds: a phone ("Test iPhone A") joining, then a free game with ad mediation, using real public host names plus a fictional `puzzle-garden-game.example` that stays unknown on purpose. With the real knowledge base it gives 96 lookups to 13 companies and 4 hidden-traffic attempts. **It is simulated traffic, not a recording of a real phone.** No real recording exists yet.
 - **`labels/`**: empty. One file per demo app is planned (shape in section 7.8). BOX writes them, from the App Store label of each app as text or screenshots.
 - **`ai_cache_seed.json`**: does not exist. Optional (shape in 7.7).
 
 ### 6.7 The show screen: `frontend/`
 
-The page the judges look at, full screen on the laptop, while one of them uses the test iPhone. Built by BOX on Saturday between 17:00 and 17:45, after the FRONT role merged into BOX. It is **plain HTML, CSS and JavaScript**: no framework, no build step, no `npm install`, and nothing loaded from the internet (the font is a file in the repository). The backend serves the folder at `/` and reads the files at each request, so an edit shows after a reload.
+The page the judges look at, full screen on the laptop, while one of them uses the test iPhone. Built by BOX on Saturday between 17:00 and 17:45, after the FRONT role merged into BOX; the detail panel and the logo were added between 18:15 and 18:45. It is **plain HTML, CSS and JavaScript**: no framework, no build step, no `npm install`, and nothing loaded from the internet (the font is a file in the repository). The backend serves the folder at `/` and reads the files at each request, so an edit shows after a reload.
 
 | File | What it does |
 | --- | --- |
-| `index.html` | The page's structure: the stage, the counters, three cards, two overlays. No inline script or style |
+| `index.html` | The page's structure: the stage, the counters, three cards, three overlays (How it works, operator, detail panel), and the logo as an inline SVG drawing. No inline script or style |
 | `app.css` | The look: dark, sized to be read from one to two metres. Colours and the scaling unit are variables at the top |
-| `app.js` | About 400 lines: the WebSocket, what to count, the bubble layout, blocking, the operator keys |
+| `app.js` | About 650 lines: the WebSocket, what to count, the bubble layout, the detail panel with blocking, the operator keys |
+| `logo/index.html`, `logo/logo.css` | The logo preview page at `/logo`: the three turtle drawings the team chose from. No script |
 | `assets/tattle-architecture.png` | A copy of `docs/tattle-architecture.png`, shown by "How it works" |
 | `assets/fonts/` | The Inter typeface (one variable font file, latin characters) and its license (SIL Open Font License) |
 | `README.md` | How to see it, what is on it, the keys |
 
 **What is on the screen:**
 
-- **The stage.** A phone outline in the middle with the phone's name ("Device 1") and the session's app name under it. Around it, one **bubble per company** the phone contacted. A bubble's colour and a short text tag give the category (`AD` advertising, `AN` analytics, `SO` social, `FP` fingerprinting, `CDN` content delivery, `OWN` the phone maker's or the app's own servers, `?` not identified); colour is never the only signal. Its size follows the number of lookups (the square root, so one busy company does not swallow the screen). It pulses at every new lookup, and a thin line to the phone flashes. Servers that no list or model knows share one bubble, "Not identified", which cannot be blocked. A company the AI named has a dotted outline and the tag "AI guess".
-- **Blocking.** A click on a bubble sends `POST /api/block` with the company. The bubble turns grey with a dashed outline and a struck-through name, and its count becomes "blocked ×N", which keeps climbing as the app keeps trying. A bar at the bottom says what was blocked, how many names that covers, that it stops new connections ("close the app and open it again"), and offers **Undo** for 8 seconds. A second click on the bubble unblocks.
+- **The stage.** A phone outline in the middle with the phone's name ("Device 1") and the session's app name under it. Around it, one **bubble per company** the phone contacted. A bubble's colour and a short text tag give the category (`AD` advertising, `AN` analytics, `SO` social, `FP` fingerprinting, `CDN` content delivery, `OWN` the phone maker's or the app's own servers, `?` not identified); colour is never the only signal. Its size follows the number of lookups (the square root, so one busy company does not swallow the screen). It pulses at every new lookup, and a thin line to the phone flashes. Servers that no list or model knows share one bubble, "Not identified". A company the AI named has a dotted outline and the tag "AI guess".
+- **The detail panel.** A click on a bubble no longer blocks at once (it did until Saturday 18:15): it opens a large panel about that company. From top to bottom:
+  - The company's name with the same category tag as its bubble, and how many server names and lookups it stands for.
+  - **Who it is.** The panel opens immediately with one plain sentence built from the knowledge base, for example "AppLovin: an advertising company, according to our tracker list." At the same time it asks the backend (`GET /api/explain`, section 7.6a). If the AI module can explain companies, "AI is thinking…" blinks next to the sentence, and after a few seconds the AI's two or three sentences take its place: who the company is and what it is most likely doing in this app, judging by the server names. A badge always says which text is on screen: "FROM OUR TRACKER LIST", "FROM THE AI" (with "written by <model>"), or "AI GUESS, NOT ON OUR LIST" for a company only the AI has named. Under an AI text the list's sentence stays as a smaller facts line. The page remembers each answer, and so does the backend, so opening the same company a second time shows the AI's text at once.
+  - **What is blocked right now**, as a large badge: "BLOCKED" (red), "2 OF 7 BLOCKED" (amber) or "NOT BLOCKED", with one line of explanation ("A block stops new connections: close the app and open it again.") and the button "Block <company>", which becomes "Unblock <company>".
+  - **Every server name** the phone asked for under that company, most looked up first: its own category tag, the name, how many times it was asked for, when it was last seen ("12 s ago", counting on), and its state: "open", "BLOCKED · refused ×4" (refused means: the phone asked and we answered "does not exist"), or "refused ×4 earlier" for a name that was blocked and is open again. Each row has its own Block or Unblock button; a blocked row is tinted red with the name struck through. While the whole company is blocked the row buttons are hidden, because a single name cannot be let through then.
+  - A long server name is shortened in its front part and never at its end, because the last two parts of a name say whose server it is: `telemetry.puzzle-garden-game.example` may shrink to "teleme…puzzle-garden-game.example", never the other way round. The front part is shown dimmer. The full name appears when the pointer rests on it. Names are inserted as text only.
+  - "Not identified" opens the same panel: the names no list knows, each with a Block button of its own, and "AI guess: analytics" under a name where the AI gave a category but no company. (A name the AI can put a company to leaves this bubble and joins that company's.)
+  - It closes with `Esc`, with its Close button, or with a click outside it. Its text is sized for one to two metres: at 1920x1080 the explanation is 28 pixels high and the rows 24.
+- **On the bubbles.** A blocked company's bubble is grey with a dashed outline and a struck-through name, and its count becomes "blocked ×N", which keeps climbing as the app keeps trying. A company with only some names blocked keeps its colour and gets a dashed outline.
 - **Counters** (right): companies contacted (large); how many of them are advertising and how many analytics; seconds into the session; blocked attempts; hidden-traffic attempts.
 - **"In plain words":** the backend's summary sentence, with "written by <model>" when the AI wrote it.
 - **"App Store privacy label":** appears when a label file matches the session's app name. It shows "DOES NOT MATCH" or "CONSISTENT" (word and colour), the verdict sentence, the rule-based sentence under it when the AI wrote the verdict, and what the label says. The page asks `GET /api/label-check` when a session starts or stops and every 4 seconds while one is on screen.
@@ -500,19 +520,23 @@ The page the judges look at, full screen on the laptop, while one of them uses t
 
 **Operator keys:** `S` opens the panel with the app-name field ready when no session runs (Enter starts it) and stops the session when one runs. `W` pressed twice within 3 seconds wipes everything. `H` opens "How it works", `C` the operator panel, `F` full screen, `Esc` closes. Keys are ignored while typing in a field.
 
+**The logo.** A turtle, drawn as inline SVG in the page (no image file). Three variants are on a preview page at `/logo`, each at browser-tab size, at header size next to the name, and large, on a dark and on a light background: **A "Radar"** (seen from above, the shell is a radar screen with a sweep and a blip), **B "Network"** (seen from above, the shell's plates form a node with six links) and **C "Hotspot"** (seen from the side, the shell is a dome over a hotspot's signal arcs). **The team chose A** on Saturday at 19:00, and it is the drawing in the header and on the browser tab. (C was there for the first three quarters of an hour, as BOX's pick; the preview page stays as a record of the choice.) The browser-tab icon is not a second file: when the page loads, the script turns the header's drawing into a `data:` address and sets it as the icon, so changing the logo means changing one drawing. The drawing's colours are written out as values (the same ones as the variables in `app.css`), because the tab icon is shown without the stylesheet.
+
 **Which phone and which lookups it shows.** One phone at a time: the session's phone, from the session's start; after a stop it keeps showing that session (frozen, marked "ended") until the next start or a wipe. Without any session it shows the phone that sent the latest lookup, with everything it sent. The laptop's own test lookups ("box self-test") are never shown. A company's category is the one it was mostly contacted for, the same rule as the summary sentence, so the counters and the sentence agree. Guard-list lookups only feed the hidden-traffic counter.
 
 **How the bubbles are placed.** A small physics loop of our own, about 40 lines, run once per screen frame: every bubble is pulled towards the middle (more strongly up and down than sideways, so the cloud takes the screen's wide shape), bubbles that overlap push each other apart, a rectangle around the phone and its labels pushes bubbles out, and the whole cloud is shifted so that its centre of mass stays on the phone. All bubbles are scaled together so that they fill about 40 % of the stage whether there are five or seventy. The loop stops when nothing moves. *Rejected:* a charting or graph library (one more thing to vendor and to trust for a layout this small).
 
-**Rules the code follows** (each one is tested, section 11): text from the network is put on the page with `textContent` only; no `innerHTML`, no `setAttribute`, no inline script or style; no address outside the backend appears in the files. The WebSocket reconnects after one second and starts from a fresh snapshot; message types the page does not know are ignored.
+**Rules the code follows** (each one is tested, section 11): text from the network is put on the page with `textContent` only; no `innerHTML`, no `setAttribute`, no inline script or style; no address outside the backend appears in the files. The WebSocket reconnects after one second and starts from a fresh snapshot; message types the page does not know are ignored. Not covered by a test, but deliberate: the detail panel's rows are updated in place and keep their order while the pointer is on the list. Lookups arrive several times a second, and a list that is rebuilt or re-sorted between pressing and releasing the mouse button swallows the click.
 
 **How it was checked.** In a headless Firefox in the VM, against a separate test backend fed by `tools/fake_sensor.py`, at 1920x1080 and 1440x900: the simulated session; a made-up session with 72 companies at once; blocking, the bar, Undo and unblocking; the label card with a stand-in label; start, stop and wipe by keyboard; a phone name and an app name containing `<img …>` and `<script>` (shown as text, no element created). With 72 bubbles and lookups arriving five times faster than real, the headless browser drew 32 to 37 frames a second without a graphics card. **Not yet checked:** on the real laptop's browser, with a real phone, or at the distance of a judges' table.
 
-**Known weak points.** The architecture image has small text that is hard to read from two metres, and it was drawn before this screen existed (its "Browser" box does not mention it). The look has not been reviewed by the AI owner. There is no history view (the `/api/history/…` endpoints have no screen yet) and the `malformed` count is not shown here (it is on `/debug`).
+**How the detail panel was checked** (Saturday 18:30, same set-up, with a stand-in AI module that answers after four seconds): at 1920x1080, opening Google's panel shows the list's sentence and "AI is thinking…" at once and the stand-in's text four seconds later; blocking the company turns every row to "BLOCKED" and the refused counts climb with the replay; blocking and unblocking one server name gives "1 OF 6 BLOCKED"; the "Not identified" panel lists its name with "AI guess: analytics" and blocks it; `Esc`, the Close button and a click outside each close it; reopening a company shows the AI's text at once, with no "thinking" state; a company name made of `<img …>` and an AI text made of `<script>` and `<b>`, both from the stand-in module, are shown as text and create no element. One look at 1440x900. The tab icon was checked only as far as "the page sets a `data:` icon and the policy allows it"; **nobody has looked at a real browser tab yet**, and the panel has not been seen with a real phone's traffic or a real model.
+
+**Known weak points.** The architecture image has small text that is hard to read from two metres, and it was drawn before this screen existed (its "Browser" box does not mention it). The look has not been reviewed by the AI owner. There is no history view (the `/api/history/…` endpoints have no screen yet) and the `malformed` count is not shown here (it is on `/debug`). In the detail panel, the sentence from the list only knows a company's category, so it is thin ("an advertising company") until an AI text replaces it; and an AI text is written once per company and session, from the server names seen at that moment, and is not refreshed when more names arrive.
 
 ### 6.8 Not built yet
 
-- **`backend/app/ai.py`** (AI) and the model server behind it.
+- **`backend/app/ai.py`** (AI) and the model server behind it. That includes `explain_company`, the function behind the detail panel's AI text: the backend and the screen are ready for it and tested with a stand-in.
 - **A history view** on the show screen for `/api/history/sessions` and `/api/history/top-companies`.
 
 ---
@@ -609,6 +633,7 @@ POST /api/wipe                                                                  
 GET  /api/state            the snapshot
 GET  /api/health           the health fields
 GET  /api/label-check      see 7.8
+GET  /api/explain?company=<name>[&device_id=<ip>]    see 7.6a
 GET  /api/history/sessions?limit=50          needs the database, see below
 GET  /api/history/top-companies?limit=10     needs the database
 POST /api/history/clear                      needs the database → {"cleared": true}
@@ -635,6 +660,29 @@ Errors: `422` with `{"detail": "…"}` for input that breaks a rule (no company 
 
 Sessions come newest first; `stopped` is `null` for one that is running or was cut off. `hits`, `companies` and `top_companies` leave out hidden-traffic attempts. `blocked` counts lookups blocked from the screen. `top-companies` groups by app name across all stored sessions; `limit` is companies per app; sessions without an app name are left out. `history/clear` deletes all stored sessions, their hits and the lab-phone rows; the knowledge-base copy and the AI cache stay.
 
+### 7.6a Who is this company? `GET /api/explain`
+
+Asked by the show screen when a detail panel opens. It works with no AI and no database.
+
+```json
+{"company": "Unity", "category": "advertising",
+ "domains": ["auction.unityads.unity3d.com", "outcome-ssp.supersonicads.com", "logs.ironsrc.mobi"],
+ "text": "Unity: an advertising company, according to our tracker list.",
+ "by": "list",
+ "fallback": "Unity: an advertising company, according to our tracker list.",
+ "pending": true}
+```
+
+- **It never waits for the AI**, the same pattern as the label check (7.8). The first call answers with the sentence built from the knowledge base and, if the AI module has `explain_company`, starts that call in the background. `pending` is `true` while the model is being asked; the page asks again every 1.2 seconds while it is. A later call carries the AI's text in `text` and the model's name in `by`.
+- `by` is `"list"` (no model wrote `text`) or the model's name. `fallback` is always the knowledge-base sentence, so a page can show it as a facts line under an AI text.
+- `category` is the category the company was mostly contacted for. `domains` are its server names, most looked up first, 20 at most. Those three things (name, category, names) are exactly what the AI is given.
+- **Which lookups count:** those of the session, running or just stopped, on the session's phone, in the session's time window; this is what the show screen displays. Without any session: the lookups of `device_id` if it is given, otherwise of every phone. Guard-list lookups never count.
+- **The sentence without a model:** "<company>: <kind>, according to our tracker list.", where the kind follows the category (advertising: "an advertising company"; analytics: "an analytics company: it measures how an app is used"; social: "a social network"; fingerprinting: "a company known for fingerprinting: telling devices apart by their technical traits"; content: "a content delivery company: it serves files such as images and video for other companies"; vendor: "the phone maker's or the app's own servers"). For a company the knowledge base does not contain (the AI named it), it ends "…according to the AI's guess. It is not on our tracker list." The show screen builds the same sentence itself, so its panel opens before this endpoint has answered; the wording lives in two places (`backend/app/explain.py`, and the category table at the top of `frontend/app.js`) and must be changed in both.
+- **Caching:** one AI text per company, phone and session start, kept in memory until the next wipe (500 at most; beyond that, only the list's sentence). The model is asked once per entry. After a failure (`None`, an exception, no answer within 10 s) `health.ai` turns false and the next question for that company is allowed 15 s later, when the panel asks again.
+- The AI's text is cut to printable characters and 500 characters, and shown as text.
+- A company nobody contacted gets the sentence, `"domains": []` and no AI call. `422` if `company` is missing, empty or longer than 100 characters, or `device_id` is not an IP address.
+- **Unverified:** no real `explain_company` exists. The endpoint is tested with a stand-in function (12 tests: the sentences, the session window, the background call, caching, failures, the cap).
+
 ### 7.7 The AI module: `backend/app/ai.py` (not written yet)
 
 ```python
@@ -642,6 +690,7 @@ async def classify_domains(domains: list[str]) -> dict[str, dict] | None
     # -> {"odd.example.io": {"company": str | None, "category": str, "confidence": float}}
 async def summarize(stats: dict) -> str | None
 async def label_check(label: dict, stats: dict) -> str | None        # optional
+async def explain_company(company: str, category: str, domains: list[str]) -> str | None   # optional
 ```
 
 `stats` is:
@@ -659,7 +708,8 @@ How the backend uses it:
 - **`classify_domains`**: a background task looks once a second for unknown names, takes up to 10, and makes one call at a time with a 10 s limit. The names are exact host names. An answer upgrades the hits on screen (a `classified` message). A name is never sent if the overrides, the list, the seed file or the database cache know it, and never if it is a guard-list name. Each name is asked once until the next wipe. On failure, `health.ai` turns false and the same names are retried after 15 s.
 - **`summarize`**: called once when a session stops. The template sentence is shown first; the AI's replaces it if it arrives in time.
 - **`label_check`**: if it exists, its sentence becomes the verdict of the label check (7.8). It is asked in the background, never while a request waits, at most every 10 s, and only when the session has new lookups.
-- Whatever the module returns is trimmed (company 80 characters, summary 600, label verdict 400) and shown as text.
+- **`explain_company`** (added to the contract on Saturday 18:30; the AI owner has still to write it): if it exists, its text becomes the explanation in the detail panel (7.6a). It receives the company's name, the category it was mostly contacted for, and up to 20 of its server names from the session, for example `("AppLovin", "advertising", ["ms.applovin.com", "rt.applovin.com"])`, and returns two or three plain sentences: who the company is, and what it is most likely doing in this app, judging by those names. It may say what a server is for; it must not claim that data was sent. Asked in the background, once per company and session.
+- Whatever the module returns is trimmed (company 80 characters, summary 600, label verdict 400, company explanation 500) and shown as text.
 
 **Seed file `data/ai_cache_seed.json`** (format proposed by BOX; the AI owner may change it): precomputed answers, loaded at startup if the file exists.
 
@@ -770,6 +820,8 @@ Each entry: what we do, why, and what we decided against.
 
 23. **A public tracker list plus a short override file; overrides win.** Disconnect's list is open, maintained and credible, but built for websites: phone-only SDK hosts and all of Apple's own servers were missing, so they are in the overrides. *Rejected:* writing our own list from scratch.
 23a. **Company names are tidied by rule when the list is built, never by hand per entry.** Disconnect writes some names in lowercase ("reddit"). One rule in `build_kb.py` fixes all of them the same way, so a rebuild cannot undo a hand edit.
+23b. **A company on screen is the name people know, not always the legal owner.** The list files LinkedIn's servers under Microsoft, which owns it. On screen that became "Microsoft: social network". The overrides file them under "LinkedIn". The same thinking as decision 24. Blocking follows the name on screen: blocking Microsoft no longer blocks LinkedIn.
+23c. **The own servers of the app being shown are `vendor`, also when the list calls them `content`.** The list is written from a website's point of view, where `reddit.com` embedded in another site is third-party content. In our demo the Reddit app is the app in the judge's hand, and its own servers showing as a "CDN" misleads. This is a per-app hand entry, not a rule: only apps we have seen live get one.
 24. **"Amazon Web Services" is a separate company from "Amazon".** CloudFront and `amazonaws.com` host half the internet; blocking Amazon's advertising business must not take them down, and calling hosted content "Amazon" would be inaccurate.
 25. **Apple's own servers are `vendor`, except its advertising hosts.** A phone talks to its maker constantly; that is not an app tracking you.
 26. **The same phone and name within 2 seconds is one lookup.** iPhones ask three record types at once.
@@ -784,8 +836,10 @@ Each entry: what we do, why, and what we decided against.
 32. **A plain presenter page (`/present`) as insurance.** Only for the case that the show screen fails. It is one file inside the backend and shares no code with the show screen, so one bug cannot take out both.
 32a. **The show screen is a plain page, not a React app.** Three files the backend serves as they are. Reasons: there is no build step to forget before the demo and no build output that can be stale; nothing is fetched from the internet at run time (the venue's network is not ours); no Node toolchain is needed on any machine that runs the demo; and with three hours to feature lock, one person can read all of it. *Rejected:* React + Vite as first planned (a toolchain and a build for a single screen), and a graph library for the bubbles (the layout is forty lines).
 32b. **Bubbles are HTML buttons, not drawings on a canvas.** Each bubble is a real button moved by a CSS transform: clicks, keyboard focus and readable text come for free, and the browser animates them cheaply. Only the thin lines to the phone are SVG. *Rejected:* a canvas (we would have to rebuild hit-testing and text fitting).
-32c. **Block by one click, with Undo, not a confirm dialog.** A dialog in the middle of the show stops it; a block is harmless and reversible, so the screen acts at once and offers Undo. The wipe, which cannot be undone, needs two key presses.
-32d. **The operator's controls are on the same screen but out of the way.** Keys and one small panel, so the person at the laptop never has to switch windows in front of a judge. Everything else (rename, `persist`, block a single domain) stays on `/debug`.
+32c. **A click on a company opens its detail panel; blocking is a button in it.** Until Saturday 18:15 one click on a bubble blocked the company at once, with an Undo bar. That was fast, but nobody watching could tell what had been blocked or why that company deserved it, and a stray click blocked something. Now the click answers "who is this?" first, and the block is one more click, with the result spelled out ("BLOCKED", the names struck through, "refused ×N" counting). There is still no confirm dialog and nothing needs undoing by a special control: the same button unblocks. The wipe, which cannot be undone, needs two key presses. *Rejected:* keeping one-click blocking and putting the details somewhere else (two gestures to learn, and the dangerous one would be the easy one).
+32d. **The operator's controls are on the same screen but out of the way.** Keys and one small panel, so the person at the laptop never has to switch windows in front of a judge. Rename and `persist` stay on `/debug`. Blocking a single server name used to be there only; it is now in the detail panel as well.
+32e. **The explanation comes from the list first and from the AI second, and says which.** The panel must never wait for a model: the sentence from the knowledge base is there the moment the panel opens, built by the page itself, and the AI's text replaces it only if and when it arrives. A badge names the source, because a model's account of "what this company is probably doing here" is an informed guess from server names and must not look like a fact from our list. The AI text is written once per company and session and then kept. *Rejected:* waiting for the AI before showing anything (a dead panel for seconds, or for ever without the tunnel); pushing the AI text over the WebSocket (a new message type for something only an open panel needs; asking again every 1.2 s while "pending" is the pattern the label check already uses); refreshing the text whenever a new server name arrives (the text would change under the reader's eyes, and every lookup would cost a model call).
+32f. **The logo is a drawing in the page, and the tab icon is made from it.** Nothing to load, nothing that can be missing offline, and one drawing to change when the team picks a variant. It costs one exception in the show screen's content security policy: images may also come from `data:` addresses. An image cannot run script, so this does not weaken what the policy is for. *Rejected:* an image file for the icon (a second copy of the logo to keep in step).
 
 **Security**
 
@@ -839,6 +893,14 @@ Each entry: what we do, why, and what we decided against.
 - The 10-second lifetime cap is what made the block take hold that fast, without airplane mode.
 - The laptop's own test lookup shows as "box self-test" and is not counted: with one phone joined the page shows 1 device.
 - Reddit's traffic showed more names the knowledge base lacked (Google's app analytics and app advertising hosts, Reddit's media hosts) and a company shown in lowercase as "reddit". All fixed (section 6.6).
+
+**Seen on the live screen with a real phone** (Saturday, about 18:00, with the show screen on the real traffic of our own phone):
+
+- Microsoft appeared as a `social` company. Its lookups were almost all LinkedIn hosts (`linkedin.com`, `licdn.com`), which the list files under Microsoft as `social`. Fixed in the overrides (section 6.6, decision 23b).
+- `login.microsoftonline.com`, `aadcdn.msauth.net` and `aadcdn.msftauth.net` (Microsoft's sign-in service) were unknown. Added.
+- Reddit's own servers showed as "CDN" (`content`). Filed as the app's own (decision 23c).
+- About a quarter of that capture (54 of 213 lookups) was names no list knew: "Not identified", as long as there is no AI module. They are left for the AI classifier and deliberately not written down here: which apps a phone has is exactly the kind of thing we keep in memory only.
+- **Not re-checked on the live screen yet:** the three fixes above were verified by looking the names up in the knowledge base, not by a new capture.
 
 **Still unverified on hardware** (as of the timestamp at the top):
 
@@ -897,9 +959,9 @@ The team presents as a security team, so judges may probe.
 | --- | --- |
 | A phone looks up `<img src=x onerror=…>.example.com` and the name is drawn on the screen as markup (XSS) | The sensor resolves and reports plain host names only (letters, digits, `-`, `_`, dots; 253 characters). The backend applies the same rule again. Rejects are counted (`health.malformed`), never stored or shown |
 | A name we cannot show is still resolved: a way to look things up unseen | Such names get REFUSED and are not forwarded |
-| Markup slips through anyway | All three pages insert everything as text; a test fails if any of them uses an HTML-building call or `setAttribute`. `/debug` and `/present` are served with a content security policy that runs only the page's own script, identified by a fresh nonce per response. The show screen's files are served with a policy that allows only files from the backend itself: no inline script or style, nothing from the internet (a test also fails if an outside address appears in those files). Checked in a headless browser with a phone name and an app name made of markup: shown as text |
+| Markup slips through anyway | All three pages insert everything as text; a test fails if any of them uses an HTML-building call or `setAttribute`. `/debug` and `/present` are served with a content security policy that runs only the page's own script, identified by a fresh nonce per response. The show screen's files are served with a policy that allows only files from the backend itself: no inline script or style, nothing from the internet (a test also fails if an outside address appears in those files). Its one exception is that images may be `data:` addresses, which the page needs to make its tab icon from its logo; an image cannot run script. Checked in a headless browser with a phone name and an app name made of markup: shown as text |
 | Any website open in the demo browser wipes the screen or listens to the live stream through that browser (cross-site POST, cross-site WebSocket) | Every `POST` and WebSocket connection is refused when its `Origin` is another site. Pages from the backend itself, or from a development server on `localhost`, are accepted |
-| Huge requests or endless new names exhaust memory | 1 MB per request, 2,000 events per batch, length limits on every text field, caps on devices (256), blocks (500), clients (50), remembered AI answers (5,000), stored lookups (5,000) |
+| Huge requests or endless new names exhaust memory | 1 MB per request, 2,000 events per batch, length limits on every text field, caps on devices (256), blocks (500), clients (50), remembered AI answers (5,000), company explanations (500), stored lookups (5,000) |
 | Junk identifiers | Device ids must be IP addresses; blocked domains must be host names; free text is cut to printable characters and a maximum length |
 | SQL injection | All database commands pass values as parameters. One test scans every statement; another stores `Robert'); DROP TABLE hits; --` as an app name and reads it back |
 | Guest phones reaching the backend | The hotspot firewall rejects traffic from phones to the VM network (**unverified on hardware**) |
@@ -911,6 +973,7 @@ The team presents as a security team, so judges may probe.
 - **No login on the API.** Anyone who can reach port 8000 can read the state, block, and wipe. Who can reach it: the laptop itself and other virtual machines on it. Phones on the hotspot are firewalled away, and other websites are refused. For a six-minute supervised demo on our own laptop this is enough; a real product would need authentication. Decided explicitly: no login for now.
 - **No rate limit per phone in the sensor.** A phone flooding lookups could slow the laptop. Only invited phones join, for minutes.
 - **DNS rebinding is not handled.** A malicious website could, in theory, make the demo browser treat the backend as "its own site". It would need the presenter to browse to such a site on the demo laptop during the demo.
+- **Two reading requests make the backend ask the model.** `GET /api/explain` and `GET /api/label-check` start a model call in the background. Reading is not refused across sites (only changing is), so a web page open in the demo browser could trigger such calls. They are bounded (one per company and session; one label verdict per 10 s), they cost the model server time and nothing else, and the page that triggered them cannot read the answers.
 - **Two firewall rules have not been challenged.** The redirect and the input rules worked in the hardware test. The two reject rules (port 853, and phones reaching the VM's network) are in place, but nobody has tried to get past them.
 
 These are written down openly in the challenges log as well; saying them unprompted is part of the pitch.
@@ -953,19 +1016,19 @@ backend/.venv/bin/uvicorn app.main:app --app-dir backend --port 8000 --no-access
 python3 tools/fake_sensor.py data/replays/demo-synthetic.jsonl --loop                    # second terminal: a simulated phone
 ```
 
-Then open `http://127.0.0.1:8000/` (the show screen: press `S`, type an app name, Enter), `/debug` (the operator console: controls and a live table) or `/present` (the plain fallback view). `--speed 4` makes the replay four times faster. The show screen needs no build: the backend reads `frontend/` at each request.
+Then open `http://127.0.0.1:8000/` (the show screen: press `S`, type an app name, Enter; click a bubble for its detail panel), `/logo` (the three logo variants), `/debug` (the operator console: controls and a live table) or `/present` (the plain fallback view). `--speed 4` makes the replay four times faster. The show screen needs no build: the backend reads `frontend/` at each request.
 
 **Tests:**
 
 ```sh
 python3 -m venv sensor/.venv && sensor/.venv/bin/pip install -r sensor/requirements-dev.txt   # once
 sensor/.venv/bin/python -m pytest sensor/tests       # 35 tests, about 50 s
-backend/.venv/bin/python -m pytest backend/tests     # 89 tests; 14 database tests are skipped
+backend/.venv/bin/python -m pytest backend/tests     # 102 tests; 14 database tests are skipped
 backend/.venv/bin/python tools/selfcheck.py          # end to end on loopback, 21 checks
 
 # with a throwaway Postgres for the database tests:
 podman run -d --rm --name tattle-pg-test -e POSTGRES_PASSWORD=tattle-test -p 127.0.0.1:55432:5432 docker.io/library/postgres:17-alpine
-TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 103 tests
+TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 116 tests
 podman stop tattle-pg-test
 ```
 
@@ -988,9 +1051,11 @@ Done once beforehand: the backend venv in the VM; copies of `sensor/` and `box/`
 
 Between steps 3 and 4 phones on the hotspot have no DNS. The laptop's own test lookup shows on the page as "box self-test". Afterwards: stop the sensor, then `sudo bash box/box-down.sh`.
 
+**After a change to the code or the data, what has to be restarted:** the backend, for anything under `backend/app/` and for `data/kb.json` or `data/kb_overrides.json` (the knowledge base is read once at start). Restarting it empties the screen; the sensor reconnects by itself. Nothing for files under `frontend/` (read at each request: reload the page) or `data/labels/` (read at each call). The sensor only when `sensor/` changed.
+
 **Recording a replay from our own phone** (the full steps are in `box/README.md`): on the laptop, restart the sensor with `--record <app-slug>.raw.jsonl` added; use the app for two minutes; stop. The file is written in the folder the sensor was started from. Device names are already replaced in it ("Test iPhone A"); host names are not, so it holds everything the phone looked up, including its background apps. It is copied into the VM as `data/replays/<app-slug>.raw.jsonl` (a name git ignores), looked through, and saved without the lines that do not belong as `data/replays/<app-slug>.jsonl`. No real recording exists yet.
 
-**The talk** (about 3:30): hook ("Your phone talks to dozens of companies you've never heard of. Want to see who?"); the consent line; hand over the iPhone and start a session named after the app; narrate as the screen fills, read the summary aloud; block a company, have the app closed and reopened (a block stops new connections, not open ones), and watch the blocked counter climb while the app keeps working; the label check, if labels exist; how it works, with the diagram; honest limits and the AI tools we used; close ("Anyone can hand a phone to Tattle and get the truth in a minute, with nothing to install").
+**The talk** (about 3:30): hook ("Your phone talks to dozens of companies you've never heard of. Want to see who?"); the consent line; hand over the iPhone and start a session named after the app; narrate as the screen fills, read the summary aloud; click a company to open its panel (who it is, which servers the app asked for), block it there, have the app closed and reopened (a block stops new connections, not open ones), and watch "refused" and the blocked counter climb while the app keeps working; the label check, if labels exist; how it works, with the diagram; honest limits and the AI tools we used; close ("Anyone can hand a phone to Tattle and get the truth in a minute, with nothing to install").
 
 **Fallbacks:**
 
@@ -1050,15 +1115,16 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 | Part | State |
 | --- | --- |
 | Sensor | Complete. 35 tests. Real DNS forwarding, guard list, blocklist, refusal of odd names, the 10-second lifetime cap, batching, surviving a backend outage. **Ran on the real laptop in the hardware test** |
-| Backend core | Complete. 103 tests with Postgres, 89 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
-| Knowledge base | First version: 4,430 domains from Disconnect plus 57 overrides. Checked against the simulated replay; the live tests showed gaps (apps' own servers, Google's app hosts, Reddit's media hosts), which were filled by hand |
+| Backend core | Complete. 116 tests with Postgres, 102 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
+| Knowledge base | First version: 4,430 domains from Disconnect plus 65 overrides. Checked against the simulated replay; the live tests showed gaps and one mislabel (apps' own servers, Google's app hosts, Reddit's hosts, Microsoft's sign-in hosts, LinkedIn shown as "Microsoft, social"), which were fixed by hand. The latest fixes (Saturday 18:30) are checked by lookup only, not yet seen on the live screen |
 | Label fact-check | Endpoint complete, tested with stand-in label files. No real labels exist yet |
 | Database layer and history endpoints | Complete, tested against Postgres 17 in a container. Not yet connected to the organizers' Postgres |
-| AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, failures, time-outs), and `health.ai_endpoint` is tested against a stand-in server. No real `ai.py`; the tunnel to the real model server has not been tried from this backend |
-| Show screen (`frontend/`, served at `/`) | Working against replayed traffic: bubbles, counters, block by click with Undo, summary, label card, live list, How it works, operator keys. Checked in a headless browser at 1920x1080 and 1440x900, with up to 72 companies and with hostile names (section 6.7). **Not yet seen on the real laptop or with a real phone** |
+| AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, company explanation, failures, time-outs), and `health.ai_endpoint` is tested against a stand-in server. No real `ai.py`; the tunnel to the real model server has not been tried from this backend |
+| Show screen (`frontend/`, served at `/`) | Working against replayed traffic: bubbles, counters, the detail panel (explanation from the list and from a stand-in AI, every server name, blocking a company or a single name), summary, label card, live list, How it works, operator keys, the turtle logo and tab icon. Checked in a headless browser at 1920x1080 and 1440x900, with up to 72 companies and with hostile names (section 6.7). The first version was seen with a real phone at about 18:00; **the detail panel and the logo have not been seen on the real laptop or with a real phone** |
+| Logo | Variant A (the radar turtle) is in the header and the tab icon, chosen by the team. Checked in a headless browser at header size; **not yet seen in a real browser tab**. The preview of all three stays at `/logo` |
 | `/debug` and `/present` | Working. Checked in a scripted browser, including hostile input; `/present` also in one real browser screenshot |
 | Fake sensor and simulated replay | Working |
-| End-to-end self-check | 21 checks. Passed in four of five runs on Saturday 17:40; one run failed two checks that were not recorded. Earlier failures of this kind came from the development VM's own DNS resolver timing out |
+| End-to-end self-check | 21 checks. Passed in four of five runs on Saturday 17:40; one run failed two checks that were not recorded. On Saturday 18:35, one of two runs failed one check ("example.com forwarded over UDP" got SERVFAIL, the resolver's "I could not find out") and the other passed. Failures of this kind come from the development VM's own DNS resolver timing out, not from our code, as far as we can tell |
 | Soak test | 10.5 minutes at about 25 lookups a second with two backend restarts: backend memory flat at about 79 MB once the 5,000-lookup buffer was full, sensor at 26 MB, the sensor kept answering and delivered everything it had queued, clients reconnected within 7 s. Two lookups in about 400 failed; traced to the development VM's upstream resolver taking over 3 s |
 | Start script, runbook, quickstarts | Written; the VM-side steps were run |
 
@@ -1071,7 +1137,7 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 | What | Owner |
 | --- | --- |
 | A history view on the show screen (the endpoints exist, no screen uses them) | BOX; only if time allows before feature lock |
-| `backend/app/ai.py` and the model server; notes and numbers for the GPU track | AI |
+| `backend/app/ai.py` and the model server, including the new optional `explain_company` for the detail panel; notes and numbers for the GPU track | AI |
 | Privacy labels for the demo apps (`data/labels/`) | BOX (moved from AI); waiting for the apps' App Store label texts |
 | `data/ai_cache_seed.json` | AI (optional) |
 | A recording of a real session from our own phone (`sensor --record`) | BOX, after the hardware test |
@@ -1091,11 +1157,13 @@ None open at the time of writing. Known limits are in sections 11 and 12.
 5. The format of `data/ai_cache_seed.json` is BOX's proposal; AI may change it.
 6. Knowledge-base choices for AI to review (listed at the top of `tools/build_kb.py`): which category wins when a domain is in several, what to do with anti-fraud and email-tracker entries, display names of companies.
 7. The exact submission deadline.
+8. (Settled Saturday 19:00: logo variant A.)
+9. The knowledge-base edits BOX made on Saturday 18:30 are in the AI owner's file: to be confirmed or changed by the AI owner. One open point among them: `redditstatic.com` is still `advertising`, as the list has it, while Reddit's other servers are now `vendor`.
 
 ### Next tasks, by role, in priority order
 
 **BOX**
-0. Look at the show screen on the real laptop with the real phone, from two metres; fix what does not read. Decide what to do about the architecture image (small text, drawn before the screen existed).
+0. Restart the backend so the new endpoint and the knowledge-base fixes are live; then look at the show screen and the detail panel on the real laptop with the real phone, from two metres; fix what does not read. Decide what to do about the architecture image (small text, drawn before the screen existed).
 1. Write the label files for the demo apps (`data/labels/<app-slug>.json`) as their App Store label texts arrive.
 2. Pick the demo apps with AI (de-risk test 5).
 3. Record a real session from our own phone with `--record`, so replay mode is real traffic.
@@ -1107,8 +1175,9 @@ None open at the time of writing. Known limits are in sections 11 and 12.
 
 **AI** (start with `docs/AI-QUICKSTART.md`)
 1. Ollama running on the AMD server and reachable through the SSH tunnel (`health.ai_endpoint` true); `ai.py` with `classify_domains` and `summarize`; check it with `tools/try_ai.py`.
-2. Review the knowledge base and overrides (the notes at the top of `tools/build_kb.py`).
-3. Optional: `label_check`; the seed file for the demo apps.
+2. `explain_company(company, category, domains)` in `ai.py` (section 7.7): it is what turns the detail panel from one list sentence into the AI showpiece. `tools/try_ai.py` exercises it.
+3. Review the knowledge base and overrides (the notes at the top of `tools/build_kb.py`), including BOX's edits of Saturday 18:30 (section 6.6).
+3a. Optional: `label_check`; the seed file for the demo apps.
 4. Review the show screen's look (the colours and type are variables at the top of `frontend/app.css`); the pitch diagram, which the show screen displays under "How it works"; notes and numbers for the GPU track.
 
 **Everyone:** keep the challenges log going; record the backup video after feature lock; write the submission text; rehearse with a timer.
@@ -1151,6 +1220,9 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 | 17:30 | Three hours before feature lock the judge-facing screen had no code, and its role merged into BOX | Built as a plain page the backend serves, not the planned React app: no build to forget, nothing from the internet. Checked in a headless browser at two sizes, up to 72 companies |
 | 17:30 | Three numbers on the new screen disagreed (the advertising counter, the summary, the label check) | The page now takes the session's end time from the backend, and the label sentence says "advertising servers of N companies", which is what it counts |
 | 17:30 | The first bubble layout looked wrong: names broken mid-word, bubbles sliding over the phone's label, the cloud ignoring the screen's width | Fixed after looking at screenshots; tests would not have found it |
+| 18:30 | Microsoft showed on the live screen as a social network, and Reddit's own servers as a CDN | The list files LinkedIn's hosts under their owner, Microsoft, as "social". LinkedIn is now its own company in the hand-written list, Microsoft's sign-in hosts were added, Reddit's servers are the app's own. Found by reading live lookups, not by a test |
+| 18:30 | One click blocked a company at once: nobody could see what was blocked or why | A click opens a detail panel: who the company is (the list's sentence at once, an AI text when it arrives, labelled), every server name, block buttons. The AI part runs against a stand-in only |
+| 18:30 | In the new panel, a list rebuilt on every lookup would have swallowed clicks on its buttons | Rows are updated in place and keep their order while the pointer is on them. Thought of while writing it; not something a test showed |
 
 ---
 
@@ -1158,6 +1230,8 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 
 | When | What changed in this guide |
 | --- | --- |
+| Sat 2026-10-10 19:03 | **Logo chosen: variant A**, the turtle seen from above with a radar screen for a shell. It replaces variant C in the header and the tab icon (sections 6.7 and 16). Nothing else changed. |
+| Sat 2026-10-10 18:40 | **Detail panel, company explanation, logo, knowledge-base fixes.** A click on a bubble now opens a detail panel instead of blocking (section 6.7, decision 32c rewritten, new 32e and 32f). New endpoint `GET /api/explain` and new optional AI function `explain_company` (sections 6.3, 7.6a, 7.7); tested with a stand-in, no real AI text yet. Turtle logo as inline SVG with a preview of three variants at `/logo`; the show screen's policy now also allows `data:` images for the tab icon (section 11). Overrides: Reddit's own servers as `vendor`, Microsoft's sign-in hosts added, LinkedIn as its own company (65 entries; section 6.6, decisions 23b and 23c, section 9). Tests: 116 with Postgres, 102 without. Glossary, sections 1, 5, 13, 16, 17 follow. |
 | Sat 2026-10-10 17:45 | **The show screen exists.** FRONT merged into BOX; the frontend was built as a plain page in `frontend/` and is served at `/` (new section 6.7, decisions 32a to 32d, glossary, architecture, sections 11, 13 and 16). Backend additions for it: `last_session` in the snapshot, a content security policy and `no-cache` for the files at `/`, the label sentence now says "advertising servers of N companies". Tests: 103 with Postgres, 89 without; self-check 21 checks. Runbook, pitch and quickstarts follow the new screen and its keys. |
 | Sat 2026-10-10 16:23 | **Blocking confirmed on a real phone.** Knowledge base: company names tidied by rule in `build_kb.py` (52 names), 4 overrides added (57). Model server: Ollama on the AMD server behind an SSH tunnel; new `health.ai_endpoint`; `.env` values for the tunnel. Privacy labels moved from AI to BOX. Recording procedure for a real replay written down. Sections 1, 2, 3, 4, 6, 7.5, 7.7, 7.8, 8 (23a, 33a), 9, 11, 13, 16, 17 updated. |
 | Sat 2026-10-10 14:08 | **Hardware test passed** on the third run. Findings from it: blocking acts on new connections only (sensor now caps answer lifetimes at 10 s with `--max-ttl`; `/debug` shows what a block covers; `blocked` messages carry `covers`); the laptop's own test lookup is shown as "box self-test"; Netflix, Discord and OpenAI added to the overrides (53 entries). Sections 3, 4, 5, 6, 7.5, 8 (3a, 22a), 9, 11, 12, 13, 16, 17 updated. Blocking is not yet re-tested on a real phone. |

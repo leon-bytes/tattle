@@ -74,6 +74,7 @@ Each owner edits only their own folders. Shared files: this doc, `docs/PITCH.md`
 - Keys are lowercase with no trailing dot.
 - Tracker list credit: Disconnect's list is CC BY-NC-SA 4.0 (non-commercial). Credit it in the README.
 - **v1 exists** (built by BOX; AI owns it from here): `tools/build_kb.py` downloads Disconnect's `services.json` and writes `data/kb.json` (about 4,400 domains). Its choices and open points are in the note at the top of that script. `data/kb_overrides.json` holds Apple's system domains (`vendor`, with Apple's ad hosts as `advertising`), the big CDNs (`content`) and phone-only SDK hosts the list lacks. Both files may carry other top-level keys (`license`, `about`); only `domains` is read.
+- **Changed by BOX on Saturday evening (the file is AI's; these came from what the live screen showed):** in `data/kb_overrides.json`, Reddit's own servers (`reddit.com`, `redd.it`, `redditmedia.com`) are `vendor`, like Netflix, Discord and OpenAI; its two tracking-pixel hosts keep the list's category. Microsoft's sign-in hosts (`microsoftonline.com`, `msftauth.net`, `msauth.net`) are filed under Microsoft. LinkedIn's hosts (`linkedin.com`, `licdn.com`) are filed under "LinkedIn": the list files them under the owner, Microsoft, as `social`, which made Microsoft show up as a social network.
 
 ### Sensor → backend: `POST /api/events`
 
@@ -157,6 +158,28 @@ GET  /api/state           same shape as the snapshot
 GET  /api/health
 ```
 
+**Added by BOX: who is this company?** (for the show screen's detail panel; works without AI)
+
+```
+GET /api/explain?company=<name>                  one company in a few plain sentences
+GET /api/explain?company=<name>&device_id=<ip>   the same; without a session, count only this phone's lookups
+```
+
+```json
+{"company": "Example Ads", "category": "advertising", "domains": ["ads.example.com", "cdn.example-ads.net"],
+ "text": "Example Ads: an advertising company, according to our tracker list.",
+ "by": "list",
+ "fallback": "Example Ads: an advertising company, according to our tracker list.",
+ "pending": true}
+```
+
+- It answers at once and never waits for the AI: the same pattern as the label check below. `text` is the sentence to show. `by` says who wrote it: `"list"` (built from the tracker list, no model involved) or the model's name. `fallback` is always the list's sentence. `pending` is `true` while the AI is being asked: ask again in a second or so.
+- With `ai.explain_company` (see the AI module below), a later call carries the AI's text in `text`. It is then kept until the next wipe or the next session, so opening the same company again is instant and the model is asked once per company.
+- `category` is what the company was mostly contacted for. `domains` are its server names, most looked up first, at most 20: exactly what the AI is given.
+- Which lookups count: those of the session (the running one, or the one that just stopped), on the session's phone. Without a session: those of `device_id`, or of every phone if it is left out. Guard-list lookups never count.
+- A company nobody contacted gets a sentence too, `domains: []`, and the AI is not asked. A company only the AI has named is described as a guess ("…according to the AI's guess. It is not on our tracker list.").
+- `422` without a company, or with a `device_id` that is not an IP address.
+
 **Added by BOX: history, read from Postgres**
 
 ```
@@ -194,12 +217,17 @@ async def summarize(stats: dict) -> str | None
     # stats: {"device": str, "label": str | None, "seconds": int,
     #         "by_category": {"advertising": 9}, "top_companies": [["Example Ads", 14]]}
 async def label_check(label: dict, stats: dict) -> str | None   # stretch
+async def explain_company(company: str, category: str, domains: list[str]) -> str | None   # optional, added Saturday evening
 ```
 
 - Every call times out within 8 s and returns `None` on any failure. The backend then falls back to a template sentence.
 - Results are cached: Postgres `ai_cache`, plus `data/ai_cache_seed.json` for the demo apps.
 - **Added by BOX:** `stats` also carries `"blocked"` (lookups blocked from the UI) and `"hidden_attempts"` (guard-list lookups; these are left out of `by_category` and `top_companies`).
 - **Added by BOX:** the backend calls all three. `label_check` is optional: if it exists, its sentence becomes the verdict of the label endpoint below. How the calls are made is in `docs/AI-QUICKSTART.md`.
+- **Added by BOX: `explain_company` (optional).** The show screen's detail panel asks `GET /api/explain` (above) when someone clicks a company. If the function exists, the backend calls it in the background and shows its text in place of the tracker list's sentence.
+  - It gets the company's name, the category it was mostly contacted for, and up to 20 of its server names from this session, most looked up first: `("AppLovin", "advertising", ["ms.applovin.com", "rt.applovin.com"])`.
+  - It returns two or three plain sentences: who this company is, and what it is most likely doing in this app, judging by those server names. Plain text, no markup. Say "contacted"; never claim that data was sent: we see names, not content.
+  - Same rules as the others: answer within 8 s, return `None` on any failure, never raise. The backend cuts the text at 500 characters, keeps it until the next wipe or session, and asks once per company (again 15 s after a failure, if the panel is opened again).
 
 `data/ai_cache_seed.json` (**proposed by BOX, AI owner may change**): precomputed answers, loaded at startup if the file exists.
 
@@ -286,7 +314,7 @@ GET /api/label-check?app=<name> the same, against another label
 - Requests are limited: 1 MB per body, 2,000 events per batch, 500 blocks, 256 devices, 50 WebSocket clients.
 - Requests that change something (every `POST`), and WebSocket connections, are refused with `403` when they come from a page on another site. A page served by the backend itself, or by a dev server on the same machine (`localhost`), is fine. The API still has no login.
 - The backend's own pages (`/debug`, `/present`) are served with a content security policy that runs only their own script.
-- The show screen's files at `/` are served with a policy that allows only files from the backend itself (script, style, font, image; nothing inline, nothing from the internet), and with `Cache-Control: no-cache`, so a reload always shows the latest edit.
+- The show screen's files at `/` are served with a policy that allows only files from the backend itself (script, style, font, image; nothing inline, nothing from the internet), and with `Cache-Control: no-cache`, so a reload always shows the latest edit. One exception: images may also be `data:` addresses, because the page draws its browser-tab icon from its own logo.
 
 ### Ports
 
@@ -314,7 +342,7 @@ box/                 scripts to bring the hotspot up/down on the box (Linux + Ne
 backend/app/         FastAPI app (main, kb lookup, state, db, ai), plus two plain pages: /debug (operator console) and /present (fallback view)
 backend/start.sh     one command to start the backend for the demo
 backend/sql/         schema.sql
-frontend/            the show screen served at /: index.html, app.css, app.js, assets/ (plain files, no build step)
+frontend/            the show screen served at /: index.html, app.css, app.js, assets/ (plain files, no build step); logo/ is the logo preview at /logo
 data/kb.json         tracker knowledge base (built by tools/build_kb.py)
 data/kb_overrides.json
 data/ai_cache_seed.json   optional precomputed AI answers
@@ -328,7 +356,7 @@ tools/               fake_sensor.py (replays events into the backend), build_kb.
 - Exact commands live in each folder's README. Owners keep them current.
 - **Dev (no hotspot needed):** run the backend, then `tools/fake_sensor.py` with a file from `data/replays/`. It feeds the backend exactly as a live phone would.
 - **Demo (on the box):** start the backend in the VM (`bash backend/start.sh`), then on the laptop itself `box/box-up.sh` and the sensor. The short order is in `docs/RUNBOOK.md`, the full checklist in `box/README.md`.
-- **The screens:** `/` is the show screen for the judges (`frontend/README.md` has its keys). `/debug` is the operator console. If the show screen ever fails, the backend serves a plain presenter view at `/present` (companies as coloured blocks, a counter, the summary, the privacy banner) and the controls at `/debug`.
+- **The screens:** `/` is the show screen for the judges (`frontend/README.md` has its keys); a click on a company opens its detail panel, where blocking happens. `/debug` is the operator console. If the show screen ever fails, the backend serves a plain presenter view at `/present` (companies as coloured blocks, a counter, the summary, the privacy banner) and the controls at `/debug`.
 
 ## Scope
 

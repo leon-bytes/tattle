@@ -36,7 +36,7 @@ python3 tools/fake_sensor.py data/replays/demo-synthetic.jsonl --loop        # W
 
 If the show screen ever fails at demo time, the backend has a plain fallback at `/present`. It is insurance, not a replacement.
 
-Check it: open <http://127.0.0.1:8000/>. Bubbles appear around the phone; press `S`, type an app name and Enter to start a session. <http://127.0.0.1:8000/debug> is the operator console: rows should scroll in. Both use only the API below, so their sources (`frontend/app.js`, about 400 lines, and `backend/app/debug.html`, one file, about 200 lines) are working examples of nearly everything here.
+Check it: open <http://127.0.0.1:8000/>. Bubbles appear around the phone; press `S`, type an app name and Enter to start a session. <http://127.0.0.1:8000/debug> is the operator console: rows should scroll in. Click a bubble for the company's detail panel. Both use only the API below, so their sources (`frontend/app.js`, about 650 lines, and `backend/app/debug.html`, one file, about 200 lines) are working examples of nearly everything here.
 
 ## 2. Where the page lives
 
@@ -197,6 +197,28 @@ GET /api/label-check?app=<name> the same session against another label
 - The endpoint never waits for the AI. In this run the first call answered `"verdict_by": "rules"` and the call a second later carried the model's sentence, shown above. So poll every few seconds while the panel is open.
 - A label file exists only for apps the AI owner entered in `data/labels/`. The session's app name must match the label's `app` or its file name.
 
+**Who is this company?** (behind the detail panel that opens on a click on a bubble; works without AI)
+
+```
+GET /api/explain?company=Unity&device_id=10.42.0.23
+→ 200  {"company": "Unity", "category": "advertising",
+        "domains": ["auction.unityads.unity3d.com", "outcome-ssp.supersonicads.com", "webview.unityads.unity3d.com", "logs.ironsrc.mobi", "config.unityads.unity3d.com", "init.supersonicads.com"],
+        "text": "Unity: an advertising company, according to our tracker list.", "by": "list",
+        "fallback": "Unity: an advertising company, according to our tracker list.", "pending": true}
+
+the same call five seconds later
+→ 200  { …the same company, category and domains…,
+        "text": "Unity is best known for advertising. In this app its servers were most likely contacted to pick and measure ads, judging by names such as auction.unityads.unity3d.com. That is a guess from the names alone.",
+        "by": "stand-in-model",
+        "fallback": "Unity: an advertising company, according to our tracker list.", "pending": false}
+```
+
+- It always answers at once. `text` is what to show; `by` is `"list"` (the tracker list's sentence) or the model's name; `fallback` is always the list's sentence; `pending` means the AI is being asked: call again in a second.
+- Without an `ai.py` that has `explain_company`, the first answer is the only one: `by` stays `"list"` and `pending` is `false`.
+- The AI's text is kept by the backend until the next wipe or session start, so the second time a company is opened the first answer already carries it.
+- `domains` are the company's server names in this session, most looked up first (20 at most). `device_id` only matters while there is no session: then it limits the count to that phone.
+- The second answer above was written by a stand-in module used for testing, not by a real model.
+
 **History** (only with the database; without it all three answer `503 {"detail": "no database configured"}`, so hide the view)
 
 ```
@@ -229,7 +251,7 @@ We are a security team and judges may poke at the screen. The one rule: **everyt
 - **Why:** a phone chooses the names it looks up, and someone will try `<img src=x onerror=alert(1)>.example.com`. The sensor and the backend refuse names that are not plain host names (they are counted in `health.malformed` and never reach you), but that is the first line of defence, not the only one. Company names and summaries can come from a model; device names and session labels are typed by people and are passed on as typed.
 - **In our page:** `textContent` and `createElement` only. Never `innerHTML`, `outerHTML` or `insertAdjacentHTML` with anything from the API. In a framework such as React, `{hit.domain}` in JSX is safe (it is always text); `dangerouslySetInnerHTML` is not.
 - **Not in attributes that run or load:** don't build `href`, `src` or `style` strings from API values. A link to `"https://" + domain` would send a judge's click to a tracker.
-- **This applies to:** `hit.domain`, `hit.company`, `device.name`, `session.label`, `summary.text`, `verdict`, `rule_verdict`, `db_error`, and everything in the history and label answers.
+- **This applies to:** `hit.domain`, `hit.company`, `device.name`, `session.label`, `summary.text`, `verdict`, `rule_verdict`, `db_error`, `text` and `fallback` of the company explanation, and everything in the history and label answers.
 - **What the backend refuses.** Real answers from this run:
 
 ```
@@ -242,6 +264,6 @@ POST /api/wipe   (sent by a page on another site)
 
 - **Other sites:** every `POST` and the WebSocket are refused (`403`) when the page making the request was loaded from another site. Pages served by the backend, or by a dev server on `localhost`, are fine. If you open the Vite dev server through a LAN address instead of `localhost`, leave the proxy's `changeOrigin` at its default (off).
 - **Limits you might hit:** 1 MB per request, device name 64 characters, session label and company 100, 500 blocks, 50 WebSocket connections. Over the limit is a `422` (or `413` for size).
-- **How we check our own pages:** the show screen, `/debug` and `/present` insert text only, and a test fails if any of them uses an HTML-building call or `setAttribute`. All three are served with a content security policy: the two single-file pages run nothing but their own script, and the show screen may load only files from the backend itself (no inline script or style, nothing from the internet).
+- **How we check our own pages:** the show screen, `/debug` and `/present` insert text only, and a test fails if any of them uses an HTML-building call or `setAttribute`. All three are served with a content security policy: the two single-file pages run nothing but their own script, and the show screen may load only files from the backend itself (no inline script or style, nothing from the internet; the one addition is `data:` images, used for the browser-tab icon the page draws from its own logo).
 
 The `classified` message, the second `summary` and the history examples came from a run with a stand-in AI module and a local Postgres. Without them the shapes are the same; those messages just never arrive.

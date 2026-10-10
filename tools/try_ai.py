@@ -36,6 +36,7 @@ STATS = {"device": "Test iPhone A", "label": "Demo Game", "seconds": 95,
 LABEL = {"app": "Demo Game", "source_url": "https://apps.apple.com/app/id0000000000", "checked": "2026-10-10",
          "data_used_to_track_you": [], "data_linked_to_you": ["Identifiers", "Usage Data"],
          "data_not_linked_to_you": ["Diagnostics"], "data_not_collected": False}
+COMPANY = ("AppLovin", "advertising", ["ms.applovin.com", "rt.applovin.com", "d.applovin.com", "a.applvn.com"])
 
 failures = 0
 
@@ -143,6 +144,14 @@ async def main() -> None:
         say(None, "label_check is not there, which is fine")
     elif (result := await call(module, "label_check", dict(LABEL), dict(STATS))) is not BROKEN:
         check_text("label_check", result)
+
+    print("explain_company(company, category, domains)   [optional]")
+    if not hasattr(module, "explain_company"):
+        say(None, "explain_company is not there, which is fine: the detail panel keeps the tracker list's sentence")
+    elif (result := await call(module, "explain_company", COMPANY[0], COMPANY[1], list(COMPANY[2]))) is not BROKEN:
+        check_text("explain_company", result)
+        if isinstance(result, str) and len(result.strip()) > 500:
+            say(None, f"explain_company wrote {len(result.strip())} characters: the backend cuts it at 500. Two or three sentences.")
 
     print("RESULT: " + ("the backend can use this module" if not failures else f"{failures} problem(s) to fix"))
     sys.exit(1 if failures else 0)

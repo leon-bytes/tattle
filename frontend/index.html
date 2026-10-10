@@ -10,7 +10,21 @@
 
 <header class="top">
   <div class="brand">
-    <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
+    <svg class="mark" id="logo" viewBox="0 0 64 64" aria-hidden="true">
+      <g fill="#34d399">
+        <circle cx="32" cy="9" r="7"/>
+        <ellipse cx="11" cy="21" rx="8" ry="5" transform="rotate(-35 11 21)"/>
+        <ellipse cx="53" cy="21" rx="8" ry="5" transform="rotate(35 53 21)"/>
+        <ellipse cx="13" cy="52" rx="7" ry="4.5" transform="rotate(35 13 52)"/>
+        <ellipse cx="51" cy="52" rx="7" ry="4.5" transform="rotate(-35 51 52)"/>
+        <path d="M28 55 L32 63 L36 55 Z"/>
+      </g>
+      <circle cx="32" cy="36" r="21" fill="#141b2d" stroke="#38bdf8" stroke-width="4"/>
+      <path d="M32 36 L32 15 A21 21 0 0 1 50.2 25.5 Z" fill="#38bdf8" opacity="0.45"/>
+      <circle cx="32" cy="36" r="11" fill="none" stroke="#38bdf8" stroke-width="2.5"/>
+      <circle cx="32" cy="36" r="3.5" fill="#f2f5fb"/>
+      <circle cx="42" cy="27" r="2.8" fill="#f2f5fb"/>
+    </svg>
     <span class="word">Tattle</span>
     <span class="tagline">who is your phone talking to?</span>
   </div>
@@ -38,7 +52,6 @@
     <ul class="legend" id="legend" aria-label="Legend"></ul>
     <div class="toast" id="toast" role="status" hidden>
       <span id="toast-text"></span>
-      <button type="button" id="toast-undo">Undo</button>
     </div>
   </section>
 
@@ -121,7 +134,36 @@
       <button type="button" class="danger" id="ctl-wipe">Wipe everything</button>
     </div>
     <p class="keys"><kbd>S</kbd> start or stop a session &nbsp; <kbd>W</kbd> <kbd>W</kbd> wipe &nbsp; <kbd>H</kbd> how it works &nbsp; <kbd>C</kbd> this panel &nbsp; <kbd>F</kbd> full screen</p>
-    <p class="keys">Click a company to block it; click again to unblock. More controls: <a href="/debug">/debug</a></p>
+    <p class="keys">Click a company for its details, and to block it or single server names. More controls: <a href="/debug">/debug</a></p>
+  </div>
+</div>
+
+<div class="overlay" id="detail" hidden>
+  <div class="sheet detail" role="dialog" aria-labelledby="detail-name">
+    <button class="close" type="button" data-close>Close <kbd>Esc</kbd></button>
+    <div class="detail-head">
+      <span class="tag" id="detail-tag"></span>
+      <h2 id="detail-name"></h2>
+      <span class="detail-kind" id="detail-kind"></span>
+    </div>
+    <div class="explain">
+      <p id="detail-text"></p>
+      <p class="facts" id="detail-facts"></p>
+      <div class="explain-by">
+        <span class="source" id="detail-by"></span>
+        <span class="model" id="detail-model"></span>
+        <span class="thinking" id="detail-thinking" hidden>AI is thinking…</span>
+      </div>
+    </div>
+    <div class="detail-bar">
+      <span class="state" id="detail-state"></span>
+      <span class="detail-note" id="detail-note"></span>
+      <button type="button" class="act" id="detail-block"></button>
+    </div>
+    <div class="detail-cols" aria-hidden="true">
+      <span></span><span>Server name</span><span class="n">Lookups</span><span>Last seen</span><span>Right now</span><span></span>
+    </div>
+    <ul class="detail-rows" id="detail-rows"></ul>
   </div>
 </div>
 

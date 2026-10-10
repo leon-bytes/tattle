@@ -3,16 +3,19 @@
 // Everything that comes from the API (names, companies, sentences) is put on the page with
 // textContent, never as markup: a phone chooses the names it looks up.
 
+// `kind` completes "<company>: <kind>, according to our tracker list." The same words as KINDS in
+// backend/app/explain.py: the detail panel opens with this sentence before the backend has answered.
 const CATEGORIES = [
-  {id: "advertising", tag: "AD", label: "advertising"},
-  {id: "analytics", tag: "AN", label: "analytics"},
-  {id: "social", tag: "SO", label: "social"},
-  {id: "fingerprinting", tag: "FP", label: "fingerprinting"},
-  {id: "content", tag: "CDN", label: "content delivery"},
-  {id: "vendor", tag: "OWN", label: "the phone's or app's own"},
-  {id: "unknown", tag: "?", label: "not identified yet"},
+  {id: "advertising", tag: "AD", label: "advertising", kind: "an advertising company"},
+  {id: "analytics", tag: "AN", label: "analytics", kind: "an analytics company: it measures how an app is used"},
+  {id: "social", tag: "SO", label: "social", kind: "a social network"},
+  {id: "fingerprinting", tag: "FP", label: "fingerprinting", kind: "a company known for fingerprinting: telling devices apart by their technical traits"},
+  {id: "content", tag: "CDN", label: "content delivery", kind: "a content delivery company: it serves files such as images and video for other companies"},
+  {id: "vendor", tag: "OWN", label: "the phone's or app's own", kind: "the phone maker's or the app's own servers"},
+  {id: "unknown", tag: "?", label: "not identified yet", kind: "a company we have no category for"},
 ];
 const TAG = Object.fromEntries(CATEGORIES.map(c => [c.id, c.tag]));
+const BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 const MAX_HITS = 5000;
 const UNKNOWN_KEY = "\u0000unknown";  // cannot collide with a company name
 const FEED_ROWS = 12;
@@ -25,10 +28,14 @@ const state = {
   startedLocal: null,      // performance.now() when the running session started, if we saw it start
   sensorSeen: undefined, sensorChangedAt: -1e9,  // the sensor's heartbeat, and when we last saw it move
   shown: null,             // the phone on screen
+  detail: null,            // the company whose detail panel is open (UNKNOWN_KEY for "Not identified")
 };
 const nodes = new Map();   // company -> bubble
 const pending = new Set(); // companies that got a hit since the last frame: pulse them
-let dirty = true, awake = 0, undo = null, toastTimer = 0, wipeArmed = 0, fed = new Set();
+const explained = new Map();  // company -> the backend's last answer to /api/explain: opening it again is instant
+const rowNodes = new Map();   // server name -> its row in the detail panel
+let dirty = true, awake = 0, toastTimer = 0, wipeArmed = 0, fed = new Set();
+let explainTurn = 0, explainTimer = 0, detailNote = null;
 
 function el(tag, text, cls) {
   const node = document.createElement(tag);
@@ -60,11 +67,19 @@ function derive() {
   const seen = mine.filter(h => h.block_reason !== "guard");  // guard lookups are hidden-traffic attempts, counted apart
   const companies = new Map();
   const unknown = new Set();
+  const alone = new Map();  // server name -> blocked on its own? (only worked out when single names are blocked)
+  const single = name => {
+    if (!state.blocked.domains.length) return false;
+    if (!alone.has(name)) alone.set(name, !!coveredBy(name));
+    return alone.get(name);
+  };
+  let unknownPartly = false;
   for (const hit of seen) {
-    if (!hit.company) { unknown.add(hit.domain); continue; }
+    if (!hit.company) { unknown.add(hit.domain); unknownPartly = unknownPartly || single(hit.domain); continue; }
     let c = companies.get(hit.company);
-    if (!c) companies.set(hit.company, c = {key: hit.company, name: hit.company, hits: 0, blocked: 0, by: {}, guess: true});
+    if (!c) companies.set(hit.company, c = {key: hit.company, name: hit.company, hits: 0, blocked: 0, by: {}, guess: true, partly: false});
     c.hits++;
+    c.partly = c.partly || single(hit.domain);
     if (hit.blocked) c.blocked++;
     c.by[hit.category] = (c.by[hit.category] || 0) + 1;
     if (hit.source !== "ai") c.guess = false;
@@ -75,14 +90,19 @@ function derive() {
     c.stopped = state.blocked.companies.includes(c.name);
   }
   const bubbles = list.slice();
-  if (unknown.size) bubbles.push({key: UNKNOWN_KEY, name: "Not identified", hits: unknown.size, blocked: 0, category: "unknown", unit: "server"});
+  if (unknown.size) bubbles.push({key: UNKNOWN_KEY, name: "Not identified", hits: unknown.size, blocked: 0, category: "unknown", unit: "server", partly: unknownPartly});
   const kinds = {};
   for (const b of bubbles) kinds[b.category] = (kinds[b.category] || 0) + (b.key === UNKNOWN_KEY ? b.hits : 1);
   return {
-    sc, bubbles, kinds, latest: mine.slice(-FEED_ROWS).reverse(), companies: list.length,
+    sc, seen, bubbles, kinds, latest: mine.slice(-FEED_ROWS).reverse(), companies: list.length,
     advertising: kinds.advertising || 0, analytics: kinds.analytics || 0,
     blocked: seen.filter(h => h.blocked).length, hidden: mine.length - seen.length,
   };
+}
+
+// The single blocked name that covers this server name (itself or a parent), if there is one.
+function coveredBy(name) {
+  return state.blocked.domains.find(d => name === d || name.endsWith("." + d)) || null;
 }
 
 function seconds() {
@@ -111,7 +131,6 @@ function makeNode() {
   const tag = el("span", null, "tag"), name = el("span", null, "name"), count = el("span", null, "count");
   disc.append(tag, name, count);
   button.append(disc);
-  button.addEventListener("click", () => toggleBlock(button.dataset.company));
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
   $("lines").append(line);
   $("bubbles").append(button);
@@ -120,8 +139,10 @@ function makeNode() {
   for (const other of nodes.values()) { sx += (other.x - box.w / 2) * other.r * other.r; sy += (other.y - box.h / 2) * other.r * other.r; }
   const angle = (sx || sy ? Math.atan2(-sy, -sx) : Math.random() * Math.PI * 2) + (Math.random() - 0.5) * 1.6;
   const reach = Math.hypot(box.phone.right - box.phone.left, box.phone.bottom - box.phone.top) / 2;  // start clear of the phone's labels
-  return {el: button, disc, tag, name, count, line, r: 8, target: 8, shown: 0, vx: Math.cos(angle) * 6, vy: Math.sin(angle) * 6,
-          x: box.w / 2 + Math.cos(angle) * reach, y: box.h / 2 + Math.sin(angle) * reach};
+  const node = {el: button, disc, tag, name, count, line, r: 8, target: 8, shown: 0, vx: Math.cos(angle) * 6, vy: Math.sin(angle) * 6,
+                x: box.w / 2 + Math.cos(angle) * reach, y: box.h / 2 + Math.sin(angle) * reach};
+  button.addEventListener("click", () => openDetail(node.key));
+  return node;
 }
 
 function reconcile(view) {
@@ -138,11 +159,9 @@ function reconcile(view) {
     let node = nodes.get(b.key);
     if (!node) nodes.set(b.key, node = makeNode());
     const r = node.target = Math.max(16, Math.min(raw[i] * scale, box.h * 0.2));
-    const blockable = b.key !== UNKNOWN_KEY;
     const words = b.name.split(/\s+/), longest = Math.max(...words.map(word => word.length));
-    node.el.dataset.company = blockable ? b.name : "";
-    node.el.disabled = !blockable;
-    node.el.className = "bubble" + (b.stopped ? " stopped" : "") + (b.guess ? " guess" : "") +
+    node.key = b.key;
+    node.el.className = "bubble" + (b.stopped ? " stopped" : b.partly ? " partly" : "") + (b.guess ? " guess" : "") +
       (r < 30 ? " tiny" : r < 46 ? " small" : "") + (node.el.classList.contains("pulse") ? " pulse" : "");
     node.disc.className = "disc " + (b.stopped ? "" : b.category);
     node.tag.className = "tag " + b.category;
@@ -150,7 +169,7 @@ function reconcile(view) {
     node.name.textContent = b.name;
     node.count.textContent = b.stopped ? "blocked ×" + b.blocked : plural(b.hits, b.unit || "lookup");
     node.el.title = b.name + ": " + b.category + ", " + plural(b.hits, b.unit || "lookup") +
-      (blockable ? (b.stopped ? ". Blocked: click to unblock." : ". Click to block.") : "");
+      (b.stopped ? ". Blocked." : b.partly ? ". Some of its names are blocked." : "") + " Click for details.";
     // The name has to fit inside the circle: the longest word sets the limit.
     node.el.style.fontSize = Math.max(8, Math.min(r * 0.3, (1.76 * r - 5) / (0.64 * Math.max(longest, 4)), 28)) + "px";
     node.line.classList.toggle("stopped", !!b.stopped);
@@ -245,6 +264,7 @@ function render() {
   $("phone-app").textContent = sc.session ? (sc.label || "session") + (state.session ? "" : " · ended") : "";
   $("hint").textContent = !sc.id ? "Waiting for a phone on Tattle-Demo…" : sc.session ? "" : "S starts a session";
   reconcile(view);  // after the phone's labels: they decide where bubbles may not go
+  renderDetail(view);
   for (const item of $("legend").children) {
     if (!item.dataset.kind) continue;
     const n = view.kinds[item.dataset.kind] || 0;
@@ -311,6 +331,7 @@ function renderStatus() {
   const ai = state.health.ai_endpoint === true || state.health.ai === true;
   $("chip-ai").textContent = ai ? "AI: on" : "AI: off";
   $("chip-ai").className = "chip " + (ai ? "on" : "");
+  for (const node of rowNodes.values()) node.last.textContent = ago(node.ts);  // "last seen" keeps counting between lookups
 }
 
 function frame() {
@@ -319,35 +340,173 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
-function toast(text, undoAction) {
-  undo = undoAction || null;
+function toast(text) {
   $("toast-text").textContent = text;
-  $("toast-undo").hidden = !undo;
   $("toast").hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { $("toast").hidden = true; undo = null; }, 8000);
+  toastTimer = setTimeout(() => { $("toast").hidden = true; }, 8000);
 }
 
-async function toggleBlock(company) {
-  if (!company) return;
-  const wasBlocked = state.blocked.companies.includes(company);
-  try {
-    const response = await post(wasBlocked ? "/api/unblock" : "/api/block", {company});
-    if (!response.ok) throw new Error(response.status);
-    if (wasBlocked) return toast("Unblocked " + company + ".", () => post("/api/block", {company}));
-    const body = await response.json();
-    const names = ((body.covers || {})[company] || []).length;
-    toast("Blocked " + company + " (" + plural(names, "name") + "). It stops new connections: close the app and open it again.",
-          () => post("/api/unblock", {company}));
-  } catch (error) {
-    toast("That did not work. Is the backend running?");
-  }
+// ---------- the detail panel: one company, every server name, blocking ----------
+
+function ago(ts) {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - state.clockOffset - ts));
+  return s < 2 ? "just now" : s < 90 ? s + " s ago" : s < 5400 ? Math.round(s / 60) + " min ago" : Math.round(s / 3600) + " h ago";
 }
+
+function listSentence(b) {
+  return b.name + ": " + (BY_ID[b.category] || BY_ID.unknown).kind +
+    (b.guess ? ", according to the AI's guess. It is not on our tracker list." : ", according to our tracker list.");
+}
+
+// The backend answers at once with the tracker list's sentence and asks the AI in the background:
+// while it says "pending" and the panel is still on this company, ask again.
+function askExplain(company) {
+  const turn = ++explainTurn;
+  clearTimeout(explainTimer);
+  const phone = state.shown ? "&device_id=" + encodeURIComponent(state.shown) : "";
+  fetch("/api/explain?company=" + encodeURIComponent(company) + phone).then(response => response.ok ? response.json() : null).then(body => {
+    if (!body) return;
+    explained.set(company, body);
+    dirty = true;
+    if (body.pending && turn === explainTurn && state.detail === company) explainTimer = setTimeout(() => askExplain(company), 1200);
+  }).catch(() => {});
+}
+
+function openDetail(key) {
+  open("detail");
+  state.detail = key;
+  detailNote = null;
+  rowNodes.clear();
+  $("detail-rows").replaceChildren();
+  if (key !== UNKNOWN_KEY) askExplain(key);
+  dirty = true;
+}
+
+function leaveDetail() { state.detail = null; explainTurn++; clearTimeout(explainTimer); }
+
+function makeRow(name) {
+  // A long name is cut short in its front part: the last two labels say whose server it is, so they
+  // always stay. The full name is the tooltip.
+  const li = el("li"), who = el("span", null, "who"), host = el("span", null, "host");
+  const cut = name.lastIndexOf(".", name.lastIndexOf(".") - 1);
+  host.append(el("span", name.slice(0, cut + 1), "front"), el("span", name.slice(cut + 1), "owner"));
+  const node = {li, tag: el("span", null, "tag"), guess: el("span", null, "guess"), count: el("span", null, "n"),
+                last: el("span", null, "last"), now: el("span", null, "now"), button: el("button", null, "act"), ts: 0};
+  host.title = name;
+  node.button.type = "button";
+  node.button.dataset.domain = name;
+  who.append(host, node.guess);
+  li.append(node.tag, who, node.count, node.last, node.now, node.button);
+  return node;
+}
+
+function renderDetail(view) {
+  const key = state.detail;
+  if (!key) return;
+  const bubble = view.bubbles.find(b => b.key === key);
+  if (!bubble) return closeAll();  // wiped, a new session, or the AI put a company to the last unknown name
+  const unknown = key === UNKNOWN_KEY, whole = !unknown && state.blocked.companies.includes(key);
+
+  // Every server name of this company, most looked up first.
+  const rows = new Map();
+  for (const hit of view.seen) {
+    if ((hit.company || UNKNOWN_KEY) !== key) continue;
+    let row = rows.get(hit.domain);
+    if (!row) rows.set(hit.domain, row = {name: hit.domain, count: 0, refused: 0, last: 0});
+    row.count++;
+    if (hit.blocked) row.refused++;
+    if (hit.ts >= row.last) { row.last = hit.ts; row.category = hit.category; row.guess = hit.source === "ai"; }
+  }
+  const list = [...rows.values()].sort((a, b) => b.count - a.count || b.last - a.last || (a.name < b.name ? -1 : 1));
+  let stoppedNames = 0;
+  for (const row of list) {
+    let node = rowNodes.get(row.name);
+    if (!node) rowNodes.set(row.name, node = makeRow(row.name));
+    const stopped = whole || !!coveredBy(row.name);
+    if (stopped) stoppedNames++;
+    node.ts = row.last;
+    node.li.className = stopped ? "stopped" : "";
+    node.tag.className = "tag " + row.category;
+    node.tag.textContent = TAG[row.category] || "?";
+    node.guess.textContent = row.guess ? "AI guess: " + (unknown ? "" : key + ", ") + (BY_ID[row.category] || BY_ID.unknown).label :
+      unknown ? "no AI guess" : "";
+    node.count.textContent = String(row.count);
+    node.last.textContent = ago(row.last);
+    node.now.textContent = stopped ? "BLOCKED" + (row.refused ? " · refused ×" + row.refused : "") :
+      row.refused ? "refused ×" + row.refused + " earlier" : "open";
+    node.button.textContent = stopped ? "Unblock" : "Block";
+    node.button.className = "act" + (stopped ? " undo" : "");
+    node.button.hidden = whole;  // one name cannot be let through while its whole company is blocked
+  }
+  for (const [name, node] of rowNodes) {
+    if (!rows.has(name)) { node.li.remove(); rowNodes.delete(name); }
+  }
+  // Keep the order still while the pointer is on the list, or a button could move away under a click.
+  const box = $("detail-rows"), wanted = list.map(row => rowNodes.get(row.name).li);
+  if (!box.matches(":hover") && wanted.some((li, i) => box.children[i] !== li)) box.replaceChildren(...wanted);
+  else for (const li of wanted) if (!li.parentNode) box.append(li);
+
+  $("detail-tag").className = "tag " + bubble.category;
+  $("detail-tag").textContent = TAG[bubble.category] + (bubble.guess ? " · AI guess" : "");
+  $("detail-name").textContent = bubble.name;
+  $("detail-kind").textContent = (unknown ? "" : (BY_ID[bubble.category] || BY_ID.unknown).label + " · ") +
+    plural(list.length, "server name") + " · " + plural(list.reduce((sum, row) => sum + row.count, 0), "lookup");
+
+  const answer = unknown ? null : explained.get(key), byAi = !!answer && answer.by !== "list";
+  $("detail-text").textContent = unknown ? "No list knows these server names. The AI is asked about each one in the background: a name it can put a company to moves to that company's bubble, marked as a guess." :
+    answer ? answer.text : listSentence(bubble);
+  $("detail-facts").textContent = byAi ? answer.fallback : "";
+  $("detail-by").textContent = unknown ? "NOT IDENTIFIED" : byAi ? "FROM THE AI" : bubble.guess ? "AI GUESS, NOT ON OUR LIST" : "FROM OUR TRACKER LIST";
+  $("detail-by").className = "source" + (byAi ? " ai" : "");
+  $("detail-model").textContent = byAi && answer.by !== "ai" ? "written by " + answer.by : "";
+  $("detail-thinking").hidden = !(answer && answer.pending);
+
+  const covered = whole ? ((state.blocked.covers || {})[key] || []).length : 0;
+  $("detail-state").textContent = whole ? "BLOCKED" : stoppedNames ? stoppedNames + " OF " + list.length + " BLOCKED" : "NOT BLOCKED";
+  $("detail-state").className = "state" + (whole ? " blocked" : stoppedNames ? " partly" : "");
+  $("detail-note").textContent = detailNote || (
+    whole ? "Every lookup of " + key + " is refused (" + plural(covered, "name") + " on our list). A block stops new connections: close the app and open it again." :
+    stoppedNames ? "Blocked names are refused. A block stops new connections: close the app and open it again." :
+    unknown ? "These names have no company, so each one is blocked on its own." : "Block the whole company here, or single server names below.");
+  $("detail-block").hidden = unknown;
+  $("detail-block").textContent = (whole ? "Unblock " : "Block ") + bubble.name;
+  $("detail-block").className = "act" + (whole ? " undo" : "");
+}
+
+async function setBlock(target, on) {
+  try {
+    const response = await post(on ? "/api/block" : "/api/unblock", target);
+    if (!response.ok) throw new Error(response.status);
+    state.blocked = await response.json();  // the same message also arrives on the WebSocket
+    detailNote = null;
+  } catch (error) {
+    detailNote = "That did not work. Is the backend running?";
+  }
+  dirty = true;
+}
+
+$("detail-block").addEventListener("click", () => {
+  const key = state.detail;
+  if (key && key !== UNKNOWN_KEY) setBlock({company: key}, !state.blocked.companies.includes(key));
+});
+$("detail-rows").addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  const cover = coveredBy(button.dataset.domain);
+  setBlock({domain: cover || button.dataset.domain}, !cover);
+});
 
 // ---------- operator controls ----------
 
-function open(id) { for (const o of document.querySelectorAll(".overlay")) o.hidden = o.id !== id; }
-function closeAll() { for (const o of document.querySelectorAll(".overlay")) o.hidden = true; }
+function open(id) {
+  if (id !== "detail") leaveDetail();
+  for (const o of document.querySelectorAll(".overlay")) o.hidden = o.id !== id;
+}
+function closeAll() {
+  leaveDetail();
+  for (const o of document.querySelectorAll(".overlay")) o.hidden = true;
+}
 
 function startSession() {
   const device_id = $("ctl-device").value;
@@ -375,7 +534,6 @@ $("ctl-start").addEventListener("click", startSession);
 $("ctl-stop").addEventListener("click", stopSession);
 $("ctl-wipe").addEventListener("click", wipe);
 $("ctl-label").addEventListener("keydown", event => { if (event.key === "Enter") startSession(); });
-$("toast-undo").addEventListener("click", () => { if (undo) undo(); $("toast").hidden = true; undo = null; });
 for (const overlay of document.querySelectorAll(".overlay")) {
   overlay.addEventListener("click", event => { if (event.target === overlay || event.target.closest("[data-close]")) closeAll(); });
 }
@@ -426,6 +584,8 @@ const handlers = {
     state.blocked = m.blocked; state.session = m.session; state.summary = m.summary || null;
     state.ended = m.session ? null : (m.last_session || null);
     state.startedLocal = null; state.label = null;
+    explained.clear();  // the backend may have restarted: ask again
+    if (state.detail && state.detail !== UNKNOWN_KEY) askExplain(state.detail);
     sawHealth(m.health || {});
     askLabel();
   },
@@ -446,6 +606,7 @@ const handlers = {
   session(m) {
     if (m.session) {
       state.session = m.session; state.ended = null; state.summary = null; state.label = null; state.startedLocal = performance.now();
+      explained.clear();  // an explanation is about what one session contacted
       askLabel();
     }
     else if (state.session) {
@@ -460,6 +621,7 @@ const handlers = {
   health(m) { sawHealth(m); },
   wiped() {
     state.hits = []; state.devices = {}; state.session = null; state.ended = null; state.summary = null; state.label = null;
+    explained.clear();
   },
 };
 
@@ -487,7 +649,15 @@ $("legend").replaceChildren(
     item.append(el("span", c.tag, "tag " + c.id), c.label, el("b"));
     return item;
   }),
-  el("li", "Click a company to block it. Grey and dashed: blocked.", "how"));
+  el("li", "Click a company for details and blocking. Grey and dashed: blocked.", "how"));
+
+// The browser-tab icon is the header's logo: one drawing, used twice.
+const icon = el("link");
+icon.rel = "icon";
+icon.type = "image/svg+xml";
+icon.href = "data:image/svg+xml," + encodeURIComponent(new XMLSerializer().serializeToString($("logo")));
+document.head.append(icon);
+
 renderStatus();
 requestAnimationFrame(frame);
 connect();

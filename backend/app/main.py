@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import labels
+from . import explain, labels
 from .db import Db
 from .guard import Guard
 from .hub import Hub
@@ -39,6 +39,7 @@ AI_TIMEOUT = 10.0     # the AI module promises 8 s; this is the backstop
 AI_RETRY = 15.0       # pause after a failed AI call
 DB_READ_TIMEOUT = 5.0  # seconds a history request may take
 LABEL_AI_SECONDS = 10.0  # at most one AI label verdict per session this often
+MAX_EXPLAINED = 500   # company explanations remembered until the next wipe
 MAX_BLOCKED = 500     # blocked companies plus domains; the sensor fetches the list every second
 MAX_CLIENTS = 50      # WebSocket clients at once
 AI_PROBE_SECONDS = 15.0  # how often the model server is asked whether it is there
@@ -220,6 +221,20 @@ async def ask_label_ai(entry: dict, label: dict, stats: dict, lookups: int) -> N
     entry["busy"] = False
     if text:
         entry.update(text=text, lookups=lookups)  # ignored if a wipe or another session replaced the entry meanwhile
+
+
+async def ask_explain_ai(entry: dict, company: str, category: str, domains: list[str]) -> None:
+    """Fetch the AI's explanation of a company. The endpoint never waits for this: it shows the
+    tracker-list sentence now and this text on a later call."""
+    try:
+        text = await asyncio.wait_for(ai.explain_company(company, category, domains), AI_TIMEOUT)
+    except Exception:
+        text = None
+    text = plain(text, 500)
+    set_health("ai", text is not None)
+    entry["busy"] = False
+    if text:
+        entry["text"] = text  # kept until the next wipe: opening the same company again is instant
 
 
 # --- sensor side ---
@@ -431,6 +446,42 @@ async def label_check(app_name: str | None = Query(None, alias="app", max_length
             "level": level, "verdict": text, "verdict_by": by, "rule_verdict": rule_text, "note": labels.NOTE}
 
 
+# --- who is this company? (the show screen's detail panel) ---
+
+@app.get("/api/explain")
+async def explain_company(company: str = Query(max_length=100), device_id: str | None = Query(None, max_length=45)) -> dict:
+    """One company in a few plain sentences. Answered at once with a sentence built from the tracker
+    list; if `ai.explain_company` exists it is asked in the background and its text comes with a
+    later call. The lookups that count are the session's (running or just stopped); without a
+    session, those of `device_id`, or of every phone."""
+    name = plain(company, 100)
+    if not name:
+        raise HTTPException(422, "give a company")
+    if device_id is not None:
+        need_device_id(device_id)
+    session = state.session or state.last_session
+    phone, since, until = (session["device_id"], session["started"], session.get("stopped")) if session else (device_id, 0.0, None)
+    category, domains = explain.seen(state.hits, name, phone, since, until)
+    fallback = explain.fallback(name, category, bool(state.kb.company_domains(name)))
+    text, by, pending = fallback, "list", False
+    if domains and hasattr(ai, "explain_company"):
+        key = (name, phone, since)
+        entry = state.explained.get(key)
+        if entry is None and len(state.explained) < MAX_EXPLAINED:
+            entry = state.explained[key] = {"text": None, "asked": 0.0, "busy": False}
+        now = time.time()
+        if entry and entry["text"]:
+            text, by = entry["text"], os.environ.get("AI_MODEL") or "ai"
+        elif entry and not entry["busy"] and now - entry["asked"] >= AI_RETRY:  # first time, or a while after a failure
+            entry.update(busy=True, asked=now)
+            task = asyncio.create_task(ask_explain_ai(entry, name, category, domains))
+            background.add(task)
+            task.add_done_callback(background.discard)
+        pending = bool(entry and entry["busy"])
+    return {"company": name, "category": category, "domains": domains, "text": text, "by": by,
+            "fallback": fallback, "pending": pending}
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     if len(hub.clients) >= MAX_CLIENTS:
@@ -470,13 +521,14 @@ def page(name: str, request: Request) -> HTMLResponse:
 class Frontend(StaticFiles):
     """The show screen's files, read from frontend/ at each request. The policy allows only files from
     this backend (script, style, font, image; nothing inline, nothing from the internet) and
-    "no-cache" makes the browser ask every time, so a reload always shows the latest edit."""
+    "no-cache" makes the browser ask every time, so a reload always shows the latest edit.
+    The one exception is "data:" for images: the page draws its browser-tab icon from its own logo."""
 
     async def get_response(self, path: str, scope):
         response = await super().get_response(path, scope)
         host = dict(scope["headers"]).get(b"host", b"").decode("latin-1")
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
+            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
             f"connect-src 'self'{sockets(host)}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
         response.headers["Cache-Control"] = "no-cache"
         return response

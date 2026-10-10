@@ -35,9 +35,9 @@ def wait_for(condition, timeout=5.0):
     return False
 
 
-def fake_ai(monkeypatch, classify=None, summarize=None, label_check=None):
+def fake_ai(monkeypatch, classify=None, summarize=None, label_check=None, explain=None):
     """Stand in for backend/app/ai.py, which belongs to the AI owner."""
-    calls = SimpleNamespace(classify=[], summarize=[], label_check=[])
+    calls = SimpleNamespace(classify=[], summarize=[], label_check=[], explain=[])
 
     async def classify_domains(domains):
         calls.classify.append(domains)
@@ -53,6 +53,11 @@ def fake_ai(monkeypatch, classify=None, summarize=None, label_check=None):
             calls.label_check.append((label, stats))
             return await label_check(label, stats)
         module.label_check = check
+    if explain:  # optional too
+        async def explain_company(company, category, domains):
+            calls.explain.append((company, category, domains))
+            return await explain(company, category, domains)
+        module.explain_company = explain_company
     monkeypatch.setattr(main, "ai", module)
     monkeypatch.setattr(main, "AI_POLL", 0.01)
     monkeypatch.setattr(main, "AI_RETRY", 0.01)
