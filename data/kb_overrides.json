@@ -1,0 +1,46 @@
+{
+  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Three groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), and phone-only SDK hosts the web-centred Disconnect list lacks.",
+  "domains": {
+    "apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "push.apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "icloud.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "icloud-content.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "apple-dns.net": {"company": "Apple", "category": "vendor", "source": "override"},
+    "aaplimg.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "cdn-apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "mzstatic.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "apple-cloudkit.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "apple.news": {"company": "Apple", "category": "vendor", "source": "override"},
+    "itunes.com": {"company": "Apple", "category": "vendor", "source": "override"},
+    "me.com": {"company": "Apple", "category": "vendor", "source": "override"},
+
+    "iadsdk.apple.com": {"company": "Apple", "category": "advertising", "source": "override"},
+    "ca.iadsdk.apple.com": {"company": "Apple", "category": "advertising", "source": "override"},
+    "api-adservices.apple.com": {"company": "Apple", "category": "advertising", "source": "override"},
+
+    "akamai.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "akamaiedge.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "akamaihd.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "akamaized.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "akadns.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "edgekey.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "edgesuite.net": {"company": "Akamai", "category": "content", "source": "override"},
+    "fastly.net": {"company": "Fastly", "category": "content", "source": "override"},
+    "fastlylb.net": {"company": "Fastly", "category": "content", "source": "override"},
+    "cloudfront.net": {"company": "Amazon Web Services", "category": "content", "source": "override"},
+    "amazonaws.com": {"company": "Amazon Web Services", "category": "content", "source": "override"},
+
+    "app-measurement.com": {"company": "Google", "category": "analytics", "source": "override"},
+    "firebaselogging-pa.googleapis.com": {"company": "Google", "category": "analytics", "source": "override"},
+    "firebaseinstallations.googleapis.com": {"company": "Google", "category": "analytics", "source": "override"},
+    "crashlyticsreports-pa.googleapis.com": {"company": "Google", "category": "analytics", "source": "override"},
+    "an.facebook.com": {"company": "Meta", "category": "advertising", "source": "override"},
+    "applvn.com": {"company": "AppLovin", "category": "advertising", "source": "override"},
+    "appsflyersdk.com": {"company": "AppsFlyer", "category": "advertising", "source": "override"},
+    "unityads.unity3d.com": {"company": "Unity", "category": "advertising", "source": "override"},
+    "ironsrc.mobi": {"company": "Unity", "category": "advertising", "source": "override"},
+    "vungle.com": {"company": "Liftoff Mobile", "category": "advertising", "source": "override"},
+    "rayjump.com": {"company": "Mintegral", "category": "advertising", "source": "override"},
+    "inmobi.com": {"company": "InMobi", "category": "advertising", "source": "override"}
+  }
+}

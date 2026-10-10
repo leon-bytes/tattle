@@ -1,0 +1,29 @@
+{
+  "_note": "TEST FIXTURE ONLY: a tiny hand-written sample so tests and the dev loop have something to match. The real knowledge base is data/kb.json.",
+  "domains": {
+    "doubleclick.net": { "company": "Google", "category": "advertising", "source": "fixture" },
+    "googlesyndication.com": { "company": "Google", "category": "advertising", "source": "fixture" },
+    "googleadservices.com": { "company": "Google", "category": "advertising", "source": "fixture" },
+    "app-measurement.com": { "company": "Google", "category": "analytics", "source": "fixture" },
+    "firebaselogging-pa.googleapis.com": { "company": "Google", "category": "analytics", "source": "fixture" },
+    "firebaseinstallations.googleapis.com": { "company": "Google", "category": "analytics", "source": "fixture" },
+    "crashlyticsreports-pa.googleapis.com": { "company": "Google", "category": "analytics", "source": "fixture" },
+    "gstatic.com": { "company": "Google", "category": "content", "source": "fixture" },
+    "facebook.com": { "company": "Meta", "category": "social", "source": "fixture" },
+    "fbcdn.net": { "company": "Meta", "category": "content", "source": "fixture" },
+    "applovin.com": { "company": "AppLovin", "category": "advertising", "source": "fixture" },
+    "applvn.com": { "company": "AppLovin", "category": "advertising", "source": "fixture" },
+    "unity3d.com": { "company": "Unity", "category": "advertising", "source": "fixture" },
+    "supersonicads.com": { "company": "ironSource", "category": "advertising", "source": "fixture" },
+    "ironsrc.mobi": { "company": "ironSource", "category": "advertising", "source": "fixture" },
+    "vungle.com": { "company": "Vungle", "category": "advertising", "source": "fixture" },
+    "rayjump.com": { "company": "Mintegral", "category": "advertising", "source": "fixture" },
+    "inmobi.com": { "company": "InMobi", "category": "advertising", "source": "fixture" },
+    "chartboost.com": { "company": "Chartboost", "category": "advertising", "source": "fixture" },
+    "amazon-adsystem.com": { "company": "Amazon", "category": "advertising", "source": "fixture" },
+    "cloudfront.net": { "company": "Amazon", "category": "content", "source": "fixture" },
+    "appsflyersdk.com": { "company": "AppsFlyer", "category": "analytics", "source": "fixture" },
+    "sentry.io": { "company": "Sentry", "category": "analytics", "source": "fixture" },
+    "icloud.com": { "company": "Apple", "category": "content", "source": "fixture" }
+  }
+}

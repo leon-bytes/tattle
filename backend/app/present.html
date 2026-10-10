@@ -1,0 +1,161 @@
+<!doctype html>
+<!--
+  Tattle presenter view. INSURANCE ONLY.
+
+  This page exists in case the real frontend (frontend/, owned by FRONT) is not ready by
+  Saturday 15:00. If the real UI works, use that and ignore this file.
+
+  One self-contained file, served by the backend at /present. It only listens on /ws and shows
+  one phone: the session's phone, or the one seen last. Controls (session, block, wipe) are on /debug.
+  Everything that comes from the network is put on the page as text, never as markup.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tattle</title>
+<style>
+  :root { --bg: #0f1419; --fg: #f4f6f8; --dim: #a3aeba; --panel: #1b232c;
+          --advertising: #c62828; --analytics: #b45309; --social: #1d4ed8; --fingerprinting: #7e22ce;
+          --content: #047857; --vendor: #475569; --unknown: #334155; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+         background: var(--bg); color: var(--fg); font: 24px/1.35 system-ui, sans-serif; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 20px 32px 0; }
+  h1 { margin: 0; font-size: 40px; }
+  #who { color: var(--dim); font-size: 28px; text-align: right; }
+  #offline { display: none; margin: 8px 32px 0; padding: 6px 14px; border-radius: 8px; background: #7c2d12; }
+  body.offline #offline { display: block; }
+  #counter { padding: 0 32px; font-size: 72px; font-weight: 700; }
+  #detail { padding: 0 32px; font-size: 28px; color: var(--dim); }
+  #summary { padding: 12px 32px 8px; font-size: 30px; max-width: 46em; min-height: 2.7em; }
+  #blocks { flex: 1; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 12px; padding: 8px 32px 16px; }
+  .block { min-width: 170px; padding: 14px 18px; border-radius: 10px; color: #fff; }
+  .block b { display: block; font-size: 30px; }
+  .block span { font-size: 20px; }
+  .block.stopped { background: #2a323b; color: var(--dim); }
+  .block.stopped b { text-decoration: line-through; }
+  .advertising { background: var(--advertising); } .analytics { background: var(--analytics); }
+  .social { background: var(--social); } .fingerprinting { background: var(--fingerprinting); }
+  .content { background: var(--content); } .vendor { background: var(--vendor); } .unknown { background: var(--unknown); }
+  .waiting { color: var(--dim); font-size: 30px; }
+  #legend { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 0 32px 12px; font-size: 20px; color: var(--dim); }
+  #legend i { display: inline-block; width: 16px; height: 16px; margin-right: 6px; border-radius: 4px; vertical-align: -2px; }
+  footer { padding: 14px 32px; background: var(--panel); font-size: 24px; }
+</style>
+</head>
+<body>
+<header><h1>Tattle</h1><div id="who"></div></header>
+<div id="offline">Connection to the backend lost. Reconnecting…</div>
+<div id="counter"></div>
+<div id="detail"></div>
+<div id="summary"></div>
+<div id="blocks"></div>
+<div id="legend"></div>
+<footer>Reads server names only, never content. Nothing is kept after you leave.</footer>
+
+<script>
+const CATEGORIES = ["advertising", "analytics", "social", "fingerprinting", "content", "vendor", "unknown"];
+const MAX_HITS = 5000;
+const $ = id => document.getElementById(id);
+let hits = [], devices = {}, session = null, summary = null, blocked = {companies: [], domains: []};
+let scheduled = false;
+
+// Names come from the network: only ever put them on the page as text.
+function el(tag, text, cls) {
+  const node = document.createElement(tag);
+  if (text != null) node.textContent = text;
+  if (cls) node.className = cls;
+  return node;
+}
+
+function count(n, one, many) { return n + " " + (n === 1 ? one : many || one + "s"); }
+
+function render() {
+  scheduled = false;
+  // One phone at a time: the session's, or else the one seen last.
+  const id = session ? session.device_id : (hits.length ? hits[hits.length - 1].device_id : null);
+  const mine = hits.filter(h => h.device_id === id && (!session || h.ts >= session.started));
+  const seen = mine.filter(h => h.block_reason !== "guard");  // guard lookups are hidden-traffic attempts, counted apart
+
+  const companies = new Map();
+  const unknown = new Set();
+  for (const hit of seen) {
+    if (!hit.company) { unknown.add(hit.domain); continue; }
+    const entry = companies.get(hit.company) || {name: hit.company, hits: 0, blocked: 0, by: {}};
+    entry.hits++;
+    if (hit.blocked) entry.blocked++;
+    entry.by[hit.category] = (entry.by[hit.category] || 0) + 1;
+    companies.set(hit.company, entry);
+  }
+  const blocks = [...companies.values()].map(entry => {
+    entry.category = Object.keys(entry.by).sort((a, b) => entry.by[b] - entry.by[a])[0];  // what it was mostly contacted for
+    return entry;
+  }).sort((a, b) => CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category) || b.hits - a.hits);
+
+  const name = id ? ((devices[id] && devices[id].name) || id) : "";
+  $("who").textContent = name + (session && session.label ? " · " + session.label : "");
+  $("counter").textContent = count(blocks.length, "company", "companies") + " contacted";
+  $("detail").textContent = count(seen.length, "lookup") + " · " + seen.filter(h => h.blocked).length + " blocked · " +
+    count(mine.length - seen.length, "hidden-traffic attempt");
+  $("summary").textContent = summary && summary.device_id === id ? summary.text : "";
+
+  const nodes = blocks.map(entry => {
+    const stopped = blocked.companies.includes(entry.name);
+    const node = el("div", null, "block " + (stopped ? "stopped" : entry.category));
+    node.append(el("b", entry.name),
+                el("span", entry.category + " · " + (stopped ? entry.blocked + " blocked" : count(entry.hits, "lookup"))));
+    return node;
+  });
+  if (unknown.size) {
+    const node = el("div", null, "block unknown");
+    node.append(el("b", "Not identified"), el("span", count(unknown.size, "server")));
+    nodes.push(node);
+  }
+  $("blocks").replaceChildren(...(nodes.length ? nodes : [el("div", "Waiting for the phone…", "waiting")]));
+}
+
+function schedule() {
+  if (!scheduled) { scheduled = true; requestAnimationFrame(render); }
+}
+
+const handlers = {
+  snapshot(m) {
+    devices = {};
+    for (const d of m.devices) devices[d.device_id] = d;
+    hits = m.hits.slice(-MAX_HITS);
+    blocked = m.blocked; session = m.session; summary = m.summary;
+  },
+  device(m) { devices[m.device_id] = m; },
+  hit(m) { hits.push(m); if (hits.length > MAX_HITS) hits.shift(); },
+  classified(m) {
+    for (const hit of hits) {
+      if (hit.domain === m.domain && hit.source === "unknown") { hit.company = m.company; hit.category = m.category; hit.source = "ai"; }
+    }
+  },
+  summary(m) { summary = m; },
+  blocked(m) { blocked = m; },
+  session(m) { session = m.session; },
+  wiped() { hits = []; devices = {}; session = null; summary = null; },
+};
+
+function connect() {
+  const socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  socket.onopen = () => document.body.classList.remove("offline");
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    if (handlers[message.type]) { handlers[message.type](message); schedule(); }
+  };
+  socket.onclose = () => { document.body.classList.add("offline"); setTimeout(connect, 1000); };
+}
+
+$("legend").replaceChildren(...CATEGORIES.map(category => {
+  const item = el("span");
+  item.append(el("i", null, category), category);
+  return item;
+}));
+render();
+connect();
+</script>
+</body>
+</html>

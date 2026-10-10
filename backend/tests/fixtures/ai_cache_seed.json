@@ -1,0 +1,8 @@
+{
+  "_note": "TEST FIXTURE ONLY. The real file is data/ai_cache_seed.json (format: docs/TEAM.md).",
+  "domains": {
+    "seeded.example.io": { "company": "Example Seed", "category": "analytics", "confidence": 0.9 },
+    "Mixed.Case.Example.IO.": { "company": "Example Seed", "category": "advertising", "confidence": 0.8 },
+    "useless.example.io": { "company": null, "category": "not-a-category", "confidence": 0.1 }
+  }
+}

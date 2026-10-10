@@ -1,0 +1,267 @@
+"""The HTTP and WebSocket surface, through FastAPI's test client."""
+import asyncio
+import importlib.util
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+from helpers import PHONE, event, fake_ai, post_events, until
+
+from app import main
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(main, "ai", None)
+    with TestClient(main.app) as client:
+        yield client
+
+
+def test_this_checkout_has_no_ai_module_and_still_imports():
+    if importlib.util.find_spec("app.ai") is None:
+        assert main.load_ai() is None
+
+
+def test_snapshot_then_live_hits(client):
+    with client.websocket_connect("/ws") as ws:
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "snapshot"
+        assert (snapshot["devices"], snapshot["hits"], snapshot["session"]) == ([], [], None)
+        assert snapshot["blocked"] == {"companies": [], "domains": []}
+        assert snapshot["health"] == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0}
+
+        assert post_events(client, event("googleads.g.doubleclick.net", 1000.0),
+                           event("googleads.g.doubleclick.net", 1000.01, qtype="AAAA"),
+                           event("gateway.icloud.com", 1000.5),
+                           event("odd.example.io", 1001.0)) == {"accepted": 4}
+        assert until(ws, "device") == {"type": "device", "device_id": PHONE, "name": "Test iPhone A", "persist": False}
+        google = until(ws, "hit")
+        assert google == {"type": "hit", "device_id": PHONE, "domain": "googleads.g.doubleclick.net",
+                          "company": "Google", "category": "advertising", "source": "list",
+                          "blocked": False, "block_reason": None, "ts": google["ts"]}
+        apple = until(ws, "hit")
+        assert (apple["company"], apple["category"], apple["source"]) == ("Apple", "vendor", "override")
+        odd = until(ws, "hit")
+        assert (odd["company"], odd["category"], odd["source"]) == (None, "unknown", "unknown")
+        # The sensor's clock (here: year 1970) is replaced by ours; the spacing between events is kept.
+        assert abs(odd["ts"] - time.time()) < 5
+        assert (round(apple["ts"] - google["ts"], 3), round(odd["ts"] - apple["ts"], 3)) == (0.5, 0.5)
+
+    with client.websocket_connect("/ws") as ws:  # a late joiner gets it all in the snapshot
+        snapshot = ws.receive_json()
+        assert [h["domain"] for h in snapshot["hits"]] == ["googleads.g.doubleclick.net", "gateway.icloud.com", "odd.example.io"]
+        assert snapshot["devices"] == [{"device_id": PHONE, "name": "Test iPhone A", "persist": False}]
+    assert client.get("/api/state").json()["hits"] == snapshot["hits"]
+
+
+def test_bad_event_payload_is_rejected(client):
+    assert client.post("/api/events", json={"events": [{"qname": "x.example.com"}]}).status_code == 422
+    assert client.get("/api/state").json()["hits"] == []
+
+
+def test_block_and_unblock(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        before = client.get("/api/blocklist").json()
+        assert before["domains"] == []
+        assert client.post("/api/block", json={"company": "AppLovin"}).status_code == 200
+        assert until(ws, "blocked") == {"type": "blocked", "companies": ["AppLovin"], "domains": []}
+        client.post("/api/block", json={"domain": "odd.example.io"})
+        assert until(ws, "blocked")["domains"] == ["odd.example.io"]
+        blocklist = client.get("/api/blocklist").json()
+        assert blocklist["domains"] == ["applovin.com", "applvn.com", "odd.example.io"]
+        assert blocklist["version"] > before["version"]
+        client.post("/api/unblock", json={"company": "AppLovin"})
+        assert until(ws, "blocked") == {"type": "blocked", "companies": [], "domains": ["odd.example.io"]}
+        assert client.get("/api/blocklist").json()["domains"] == ["odd.example.io"]
+    assert client.post("/api/block", json={}).status_code == 422
+
+
+def test_devices_are_numbered_unless_the_sensor_sends_names(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        post_events(client, event("apple.com", client_name=None), event("apple.com", client_ip="10.42.0.24", client_name=None))
+        assert until(ws, "device") == {"type": "device", "device_id": PHONE, "name": "Device 1", "persist": False}
+        assert until(ws, "device") == {"type": "device", "device_id": "10.42.0.24", "name": "Device 2", "persist": False}
+        client.post("/api/devices/10.42.0.24", json={"name": "Lab phone"})
+        assert until(ws, "device")["name"] == "Lab phone"
+        client.post("/api/wipe")
+        post_events(client, event("apple.com", client_ip="10.42.0.30", client_name=None))
+        assert until(ws, "device")["name"] == "Device 1"  # numbering starts over after a wipe
+
+
+def test_device_rename_and_persist(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        post_events(client, event("apple.com"))
+        until(ws, "device")
+        client.post(f"/api/devices/{PHONE}", json={"name": "Lab phone", "persist": True})
+        assert until(ws, "device") == {"type": "device", "device_id": PHONE, "name": "Lab phone", "persist": True}
+        client.post(f"/api/devices/{PHONE}", json={"persist": False})
+        assert until(ws, "device")["name"] == "Lab phone"
+
+
+def test_session_start_stop_gives_a_template_summary(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        client.post("/api/session/start", json={"device_id": PHONE, "label": "Demo Game"})
+        session = until(ws, "session")["session"]
+        assert session["device_id"] == PHONE and session["label"] == "Demo Game"
+        assert abs(session["started"] - time.time()) < 5
+        post_events(client, event("ms.applovin.com"), event("app-measurement.com"))
+        assert client.post("/api/session/stop").status_code == 200
+        assert until(ws, "session") == {"type": "session", "session": None}
+        summary = until(ws, "summary")
+        assert summary["by"] == "template" and summary["device_id"] == PHONE
+        assert summary["text"].endswith("Demo Game contacted 2 companies: 1 advertising (AppLovin), 1 analytics (Google).")
+    assert client.get("/api/state").json()["summary"] == summary
+    assert client.post("/api/session/stop").status_code == 200  # stopping twice is harmless
+
+
+def test_live_summary_while_a_session_runs(client, monkeypatch):
+    monkeypatch.setattr(main, "SUMMARY_SECONDS", 1)
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        client.post("/api/session/start", json={"device_id": PHONE, "label": None})
+        post_events(client, event("ms.applovin.com"))
+        assert until(ws, "summary")["text"].endswith("this phone contacted 1 company: 1 advertising (AppLovin).")
+
+
+def test_wipe(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        post_events(client, event("ms.applovin.com"))
+        client.post("/api/block", json={"company": "AppLovin"})
+        client.post("/api/session/start", json={"device_id": PHONE, "label": "Demo Game"})
+        assert client.post("/api/wipe").json() == {"type": "wiped"}
+        assert until(ws, "wiped") == {"type": "wiped"}
+        assert until(ws, "blocked") == {"type": "blocked", "companies": [], "domains": []}
+        assert until(ws, "session") == {"type": "session", "session": None}
+    state = client.get("/api/state").json()
+    assert (state["devices"], state["hits"], state["session"], state["summary"]) == ([], [], None, None)
+    assert client.get("/api/blocklist").json()["domains"] == []
+
+
+def test_history_needs_a_database(client):
+    for response in (client.get("/api/history/sessions"), client.get("/api/history/top-companies"),
+                     client.post("/api/history/clear")):
+        assert response.status_code == 503 and response.json() == {"detail": "no database configured"}
+
+
+def test_seeded_ai_answers_apply_from_the_start(client):
+    post_events(client, event("seeded.example.io"), event("mixed.case.example.io"), event("useless.example.io"))
+    found = {h["domain"]: (h["company"], h["category"], h["source"]) for h in client.get("/api/state").json()["hits"]}
+    assert found == {"seeded.example.io": ("Example Seed", "analytics", "ai"),
+                     "mixed.case.example.io": ("Example Seed", "advertising", "ai"),
+                     "useless.example.io": (None, "unknown", "unknown")}
+    client.post("/api/wipe")
+    post_events(client, event("seeded.example.io"))
+    assert client.get("/api/state").json()["hits"][0]["source"] == "ai"  # the seed is not captured data: it survives a wipe
+
+
+def test_health_tracks_the_sensor(client):
+    assert client.get("/api/health").json() == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0}
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        client.get("/api/blocklist")  # the sensor's poll is its heartbeat
+        health = until(ws, "health")
+        assert abs(health["sensor_seen"] - time.time()) < 5
+        assert (health["db"], health["ai"]) == (False, False)
+
+
+def test_pages(client):
+    page = client.get("/debug")
+    assert page.status_code == 200 and "Reads server names only, never content." in page.text
+    if not main.DIST.is_dir():
+        assert client.get("/", follow_redirects=False).headers["location"] == "/debug"
+
+
+def test_missing_kb_files_still_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "ai", None)
+    monkeypatch.setenv("KB_PATH", str(tmp_path / "nope.json"))
+    monkeypatch.setenv("KB_OVERRIDES_PATH", str(tmp_path / "nope2.json"))
+    with TestClient(main.app) as client:
+        post_events(client, event("googleads.g.doubleclick.net"))
+        state = client.get("/api/state").json()
+        assert state["health"]["kb"] == 0 and state["hits"][0]["category"] == "unknown"
+
+
+def test_ai_classifies_unknown_names_in_the_background(monkeypatch):
+    async def classify(domains):
+        return {d: {"company": "Example Analytics", "category": "analytics", "confidence": 0.7} for d in domains}
+
+    calls = fake_ai(monkeypatch, classify=classify)
+    with TestClient(main.app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        post_events(client, event("odd.example.io"), event("ms.applovin.com"))
+        assert until(ws, "hit")["source"] == "unknown"  # the hit is on screen before the AI answers
+        assert until(ws, "classified") == {"type": "classified", "domain": "odd.example.io",
+                                           "company": "Example Analytics", "category": "analytics",
+                                           "source": "ai", "confidence": 0.7}
+        assert calls.classify == [["odd.example.io"]]  # names the kb knows are never sent
+        state = client.get("/api/state").json()
+        assert state["health"]["ai"] is True
+        assert [h["source"] for h in state["hits"]] == ["ai", "list"]
+
+
+def test_ai_summary_replaces_the_template(monkeypatch):
+    async def summarize(stats):
+        return "A friendlier sentence."
+
+    calls = fake_ai(monkeypatch, summarize=summarize)
+    monkeypatch.setenv("AI_MODEL", "test-model")
+    with TestClient(main.app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        client.post("/api/session/start", json={"device_id": PHONE, "label": "Demo Game"})
+        post_events(client, event("ms.applovin.com"))
+        client.post("/api/session/stop")
+        assert until(ws, "summary")["by"] == "template"
+        assert until(ws, "summary") == {"type": "summary", "device_id": PHONE, "text": "A friendlier sentence.",
+                                        "by": "test-model"}
+        assert calls.summarize[0]["by_category"] == {"advertising": 1}
+
+
+@pytest.mark.parametrize("failure", ["none", "raises", "hangs"])
+def test_ai_failures_only_flip_health(monkeypatch, failure):
+    async def broken(_):
+        if failure == "raises":
+            raise RuntimeError("model server down")
+        if failure == "hangs":
+            await asyncio.sleep(60)
+        return None
+
+    calls = fake_ai(monkeypatch, classify=broken, summarize=broken)
+    monkeypatch.setattr(main, "AI_TIMEOUT", 0.05)
+    with TestClient(main.app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        client.post("/api/session/start", json={"device_id": PHONE, "label": None})
+        post_events(client, event("odd.example.io"))
+        assert until(ws, "hit")["domain"] == "odd.example.io"
+        client.post("/api/session/stop")
+        assert until(ws, "summary")["by"] == "template"
+        deadline = time.time() + 3
+        while len(calls.classify) < 2 and time.time() < deadline:  # it retries, and the app keeps serving
+            time.sleep(0.02)
+        assert len(calls.classify) >= 2 and calls.summarize
+        state = client.get("/api/state").json()
+        assert state["health"]["ai"] is False
+        assert state["summary"]["by"] == "template" and state["hits"][0]["source"] == "unknown"
+
+
+def test_late_ai_answer_after_a_wipe_is_dropped(monkeypatch):
+    release = asyncio.Event()
+
+    async def classify(domains):
+        await release.wait()
+        return {d: {"company": "Example Analytics", "category": "analytics", "confidence": 0.7} for d in domains}
+
+    calls = fake_ai(monkeypatch, classify=classify)
+    with TestClient(main.app) as client:
+        post_events(client, event("odd.example.io"))
+        deadline = time.time() + 3
+        while not calls.classify and time.time() < deadline:
+            time.sleep(0.02)
+        client.post("/api/wipe")
+        client.portal.call(release.set)
+        time.sleep(0.2)
+        assert "odd.example.io" not in main.state.ai_results and client.get("/api/state").json()["hits"] == []

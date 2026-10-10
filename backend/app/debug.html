@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tattle debug</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --dim: #888; }
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 12px 16px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .banner { color: var(--dim); margin-bottom: 10px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
+  .pill { border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+  .ok { color: #2a9d4b; } .bad { color: #d6453d; } .dim { color: var(--dim); }
+  input, select, button { font: inherit; }
+  #summary { margin: 8px 0; min-height: 1.4em; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 2px 10px 2px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tr.blocked td { color: var(--dim); text-decoration: line-through; }
+  tr.blocked td:last-child { text-decoration: none; }
+  tr.hidden td { color: var(--dim); font-style: italic; }
+  .advertising { color: #d6453d; } .analytics { color: #c77a12; } .social { color: #3b78d8; }
+  .fingerprinting { color: #9b4fd1; } .content { color: #2a9d4b; } .vendor, .unknown { color: var(--dim); }
+</style>
+</head>
+<body>
+<h1>Tattle debug: live event stream</h1>
+<div class="banner">Reads server names only, never content. Nothing is kept after you leave.</div>
+
+<div class="bar" id="status"></div>
+
+<div class="bar">
+  <select id="device"></select>
+  <button id="rename">Rename</button>
+  <button id="persist" title="store this phone's sessions in the database: our own lab phones only">Persist on/off</button>
+  <input id="label" placeholder="session label (app name)" size="22">
+  <button id="start">Start session</button>
+  <button id="stop">Stop session</button>
+  <span id="session" class="dim"></span>
+  <button id="wipe">Wipe</button>
+</div>
+
+<div class="bar"><span>Blocked:</span><span id="blocked" class="bar"></span>
+  <span class="dim">History (needs the database):</span>
+  <a href="/api/history/sessions">sessions</a> <a href="/api/history/top-companies">top companies per app</a>
+  <span class="dim">Label check for the session:</span> <a href="/api/label-check">verdict</a>
+  <a href="/present">presenter view</a></div>
+<div id="summary"></div>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>time</th><th>device</th><th>domain</th><th>company</th><th>category</th><th>source</th><th>block</th></tr></thead>
+  <tbody id="hits"></tbody>
+</table>
+</div>
+
+<script>
+const MAX_ROWS = 300;
+const $ = id => document.getElementById(id);
+let devices = {}, blocked = {companies: [], domains: []}, health = {}, session = null, connected = false;
+let counts = {hits: 0, blocked: 0, hidden: 0};
+
+// Names come from the network: only ever put them on the page as text.
+function el(tag, text, cls) {
+  const node = document.createElement(tag);
+  if (text != null) node.textContent = text;
+  if (cls) node.className = cls;
+  return node;
+}
+
+function post(path, body) {
+  return fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+}
+
+function deviceName(id) { return (devices[id] && devices[id].name) || id; }
+
+function renderStatus() {
+  const flag = (label, ok, why) => {
+    const pill = el("span", label + (ok ? " ✓" : " ✗"), "pill " + (ok ? "ok" : "bad"));
+    if (why) pill.title = why;
+    return pill;
+  };
+  const seen = health.sensor_seen ? Date.now() / 1000 - health.sensor_seen : null;
+  $("status").replaceChildren(
+    flag("websocket", connected),
+    flag("sensor", seen != null && seen < 10),
+    flag("ai", health.ai), flag("db", health.db, health.db_error),
+    el("span", "kb " + (health.kb ?? "?") + " domains", "pill"),
+    el("span", counts.hits + " hits, " + counts.blocked + " blocked", "pill"),
+    el("span", counts.hidden + " hidden-traffic attempts", "pill"),
+    el("span", (health.malformed ?? 0) + " malformed names refused", "pill"),
+    el("span", Object.keys(devices).length + " devices", "pill"));
+}
+
+function renderDevices() {
+  const chosen = $("device").value;
+  $("device").replaceChildren(...Object.values(devices).map(d => {
+    const option = el("option", deviceName(d.device_id) + (d.persist ? " (persist)" : ""));
+    option.value = d.device_id;
+    return option;
+  }));
+  if (devices[chosen]) $("device").value = chosen;
+}
+
+function renderSession() {
+  $("session").textContent = session
+    ? "session: " + (session.label || "(no label)") + " on " + deviceName(session.device_id)
+    : "no session";
+}
+
+function renderBlocked() {
+  const pill = (text, body) => {
+    const node = el("button", text + " ✕");
+    node.title = "unblock";
+    node.onclick = () => post("/api/unblock", body);
+    return node;
+  };
+  const items = [...blocked.companies.map(c => pill(c, {company: c})), ...blocked.domains.map(d => pill(d, {domain: d}))];
+  $("blocked").replaceChildren(...(items.length ? items : [el("span", "nothing", "dim")]));
+}
+
+function addHit(hit) {
+  // A guard-list lookup is the phone trying encrypted DNS or Private Relay: counted apart, not a blocked tracker.
+  const hidden = hit.block_reason === "guard";
+  if (hidden) counts.hidden++;
+  else {
+    counts.hits++;
+    if (hit.blocked) counts.blocked++;
+  }
+  const row = el("tr", null, hidden ? "hidden" : hit.blocked ? "blocked" : "");
+  row.dataset.domain = hit.domain;
+  const action = el("td");
+  if (hidden) action.append(el("span", "hidden-traffic attempt, refused"));
+  else {
+    const button = el("button", hit.company ? "block company" : "block domain");
+    button.onclick = () => post("/api/block", hit.company ? {company: hit.company} : {domain: hit.domain});
+    action.append(button);
+    if (hit.blocked) action.append(el("span", " blocked", "dim"));
+  }
+  row.append(
+    el("td", new Date(hit.ts * 1000).toLocaleTimeString()), el("td", deviceName(hit.device_id)),
+    el("td", hit.domain), el("td", hit.company || "?"), el("td", hit.category, hit.category),
+    el("td", hit.source), action);
+  $("hits").prepend(row);
+  while ($("hits").children.length > MAX_ROWS) $("hits").lastChild.remove();
+}
+
+function reset() {
+  devices = {}; counts = {hits: 0, blocked: 0, hidden: 0};
+  $("hits").replaceChildren();
+  $("summary").textContent = "";
+}
+
+function showSummary(summary) {
+  $("summary").textContent = summary ? summary.text + "  [" + summary.by + "]" : "";
+}
+
+const handlers = {
+  snapshot(m) {
+    reset();
+    for (const d of m.devices) devices[d.device_id] = d;
+    blocked = m.blocked; health = m.health; session = m.session;
+    m.hits.forEach(addHit);
+    showSummary(m.summary);
+  },
+  device(m) { devices[m.device_id] = m; },
+  hit: addHit,
+  classified(m) {
+    for (const row of $("hits").children) {
+      if (row.dataset.domain !== m.domain) continue;
+      row.children[3].textContent = m.company || "?";
+      row.children[4].textContent = m.category; row.children[4].className = m.category;
+      row.children[5].textContent = "ai";
+    }
+  },
+  summary: showSummary,
+  blocked(m) { blocked = m; },
+  session(m) { session = m.session; },
+  health(m) { health = m; },
+  wiped: reset,
+};
+
+function render() { renderStatus(); renderDevices(); renderSession(); renderBlocked(); }
+
+function connect() {
+  const socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  socket.onopen = () => { connected = true; render(); };
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    (handlers[message.type] || (() => {}))(message);
+    if (message.type === "hit" || message.type === "classified" || message.type === "health") renderStatus();
+    else render();  // rebuilding the device menu on every hit would close it under the cursor
+  };
+  socket.onclose = () => { connected = false; render(); setTimeout(connect, 1000); };
+}
+
+$("start").onclick = () => $("device").value && post("/api/session/start", {device_id: $("device").value, label: $("label").value || null});
+$("stop").onclick = () => post("/api/session/stop");
+$("rename").onclick = () => {
+  const id = $("device").value;
+  const name = id && prompt("New name for " + deviceName(id));
+  if (name) post("/api/devices/" + encodeURIComponent(id), {name});
+};
+$("persist").onclick = () => {
+  const device = devices[$("device").value];
+  if (device) post("/api/devices/" + encodeURIComponent(device.device_id), {persist: !device.persist});
+};
+$("wipe").onclick = () => post("/api/wipe");
+setInterval(renderStatus, 2000);
+render();
+connect();
+</script>
+</body>
+</html>

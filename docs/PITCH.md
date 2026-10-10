@@ -4,22 +4,30 @@ The judge slot is 2 min setup, 6 min judging and questions, 2 min teardown. Aim 
 
 ## Before walking over (checklist)
 
-- Box running on the host:
+The box is one laptop running two things: the hotspot and the sensor on the laptop itself, and the backend (which serves the page) in a virtual machine on it. Exact commands: `box/README.md`.
+
+- In the VM:
+  - backend running, started with `--host 0.0.0.0`
+- On the laptop itself:
   - phone USB-tethered
-  - `box-up` done
-  - sensor and backend running
-  - page open full-screen
+  - Mullvad VPN disconnected
+  - `box-up` done (it warns if the VPN is still on)
+  - sensor running and showing `backend: connected`
+  - OpenSnitch: the sensor's two allow rules are in place (DNS to `9.9.9.9`, HTTP to the VM), so no prompt appears mid-demo
+  - page open full-screen at `http://<vm-ip>:8000/`
   - laptop set not to sleep
   - charger packed
 - Test iPhone:
   - joined `Tattle-Demo`
+  - cellular data off, if its lookups don't show up
   - demo app installed and closed
   - Low Power Mode off
   - charged
-- Test iPhone's iCloud Private Relay is off for this network (or it shows the notice: tap "use without Private Relay").
-- Hit Wipe, so the screen starts empty.
+- The iPhone shows "Private Relay is turned off for this network": expected, tap "use without Private Relay".
+- Hit Wipe, so the screen starts empty. The phone then shows as "Device 1".
+- For the history view: mark our phone as `persist` after the Wipe and before starting the session. Never a judge's phone.
 - Health shows sensor ✓. AI and DB may be ✗; the demo still works.
-- Backup: replay file loaded and ready, backup video on the second laptop (and on a phone).
+- Backup: the replay ready to start in the VM (`python3 tools/fake_sensor.py data/replays/<file>.jsonl --loop`), backup video on the second laptop (and on a phone).
 
 ## Script (~3:30)
 
@@ -64,7 +72,7 @@ Hand over the iPhone: "Open <demo app> and just use it like normal."
 
 ## If it breaks
 
-- **Hotspot or sensor dies:** say "Switching to a recording from earlier today with our own phone", start `fake_sensor` with the replay, and carry on. The UI looks identical.
+- **Hotspot or sensor dies:** say "Switching to a recording from earlier today with our own phone", start `fake_sensor` with the replay, and carry on. The UI looks identical. (Until we record our own phone, the only replay is `demo-synthetic.jsonl`, which is made-up traffic: say "a simulated session" then.)
 - **Everything dies:** play the backup video, then keep talking over the architecture diagram.
 - **AI down:** the template summary shows instead. Don't mention it unless asked.
 
@@ -74,7 +82,7 @@ Hand over the iPhone: "Open <demo app> and just use it like normal."
 The phone asks "where is ads.example.com?" before every new connection. We are the one it asks, so we see the name. We never see what's sent after that.
 
 **Why we answer instead of just listening**
-Being the resolver means the same piece of code captures and blocks. A firewall rule also catches apps that hardcode their own DNS server, like 8.8.8.8.
+Being the resolver means the same piece of code captures and blocks. A firewall rule redirects every DNS packet (port 53) coming from the hotspot to our resolver, whatever server the phone addressed it to. That catches apps that hardcode a DNS server like 8.8.8.8, and phones still using a leftover one (we saw an iPhone use its VPN's).
 
 **Blocking**
 We return NXDOMAIN ("doesn't exist"). The app can't connect, so it often retries, and that's why the blocked counter keeps going up.
@@ -84,11 +92,18 @@ We return NXDOMAIN ("doesn't exist"). The app can't connect, so it often retries
 - We skipped it because DNS already gives us the names, and SNI is getting hidden by Encrypted Client Hello (ECH) anyway.
 
 **What hides from us**
-- Encrypted DNS (DoH/DoT). We block the well-known servers so phones fall back to normal DNS.
-- iCloud Private Relay. We use Apple's documented network opt-out, and the iPhone tells the user.
+- Encrypted DNS (DoH/DoT). Our "guard list" always answers "doesn't exist" for the well-known DoH servers and for `_dns.resolver.arpa`, the name an iPhone uses to ask its resolver for an encrypted upgrade. The firewall also rejects DNS-over-TLS (port 853). The phone falls back to normal DNS.
+- iCloud Private Relay. We use Apple's documented network opt-out (`mask.icloud.com`, `mask-h2.icloud.com`, `mask.apple-dns.net` don't resolve), and the iPhone tells the user.
+- The screen counts these as "hidden-traffic attempts", apart from blocked trackers: the phone tried a private channel and we said no.
 - ECH.
 - Names the phone looked up before it joined (cached).
 - Apps that connect straight to an IP address.
+
+**Where it runs**
+One laptop. The hotspot and the DNS resolver run on the laptop itself, because that is where the Wi-Fi card is. The backend and the page run in a virtual machine on the same laptop. Phones on the hotspot cannot reach the backend.
+
+**The tracker list**
+About 4,400 domains from Disconnect's open tracking-protection list, plus our own short list for Apple's system servers, big CDNs and phone-only ad SDKs. Names no list knows go to the model.
 
 **Device vs. app**
 - We see devices, not apps.
@@ -102,8 +117,9 @@ We return NXDOMAIN ("doesn't exist"). The app can't connect, so it often retries
 
 **Data**
 - RAM by default.
-- Only our own lab phones are stored in Postgres (history view).
-- Wipe clears everything.
+- Phone names are hidden by default: the screen says "Device 1", not the name its owner gave it. We only read names for our own phones.
+- Only our own lab phones are stored in Postgres (history view), and only while we mark them.
+- Wipe clears everything on screen and in memory. Stored history has its own, separate delete.
 
 ## "Isn't this just X?" (judges will ask)
 
@@ -120,3 +136,12 @@ We return NXDOMAIN ("doesn't exist"). The app can't connect, so it often retries
 - B: UI and design
 - C: AI and data
 - Everyone: our AI tools and our challenges (from `docs/CHALLENGES.md`)
+
+## Submission: before the repo goes public
+
+If the submission needs a public repository, or before this one is opened up:
+
+- [ ] Make a **fresh** public repository from a clean copy of the project, with a new history. Deleting a file later is not enough: it stays in the old history.
+- [ ] Leave `docs/PROJECT-GUIDE.md` out of that copy and list it in the public repository's `.gitignore`. It is an internal team document. Remove the links to it in `README.md` and `docs/TEAM.md` as well.
+- [ ] Until then, do not add it to this repository's `.gitignore`: it has to keep reaching the whole team.
+- [ ] Re-check every file for personal information and secrets: `.env` files, tokens, IP addresses, MAC addresses, names.

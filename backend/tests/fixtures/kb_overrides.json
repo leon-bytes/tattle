@@ -1,0 +1,10 @@
+{
+  "_note": "TEST FIXTURE ONLY. The real overrides are data/kb_overrides.json.",
+  "domains": {
+    "apple.com": { "company": "Apple", "category": "vendor", "source": "override" },
+    "icloud.com": { "company": "Apple", "category": "vendor", "source": "override" },
+    "cdn-apple.com": { "company": "Apple", "category": "vendor", "source": "override" },
+    "apple-dns.net": { "company": "Apple", "category": "vendor", "source": "override" },
+    "iadsdk.apple.com": { "company": "Apple", "category": "advertising", "source": "override" }
+  }
+}
