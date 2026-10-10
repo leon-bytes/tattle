@@ -42,6 +42,7 @@ VALID_NAME = re.compile(r"(?=.{1,253}$)[a-z0-9_-]{1,63}(\.[a-z0-9_-]{1,63})*")
 # NetworkManager's lease file for the hotspot interface box-up.sh creates.
 DEFAULT_LEASES = "/var/lib/NetworkManager/dnsmasq-tattle0.leases"
 
+MAX_TTL = 10            # seconds; default for --max-ttl
 UPSTREAM_TIMEOUT = 3.0  # seconds
 SEND_INTERVAL = 0.25    # seconds between event batches
 POLL_INTERVAL = 1.0     # seconds between blocklist polls
@@ -64,6 +65,43 @@ def suffix_match(name: str, suffixes: frozenset[str]) -> bool:
 def host_port(value: str, default_port: int) -> tuple[str, int]:
     host, _, port = value.rpartition(":")
     return (host, int(port)) if host else (value, default_port)
+
+
+def skip_name(message: bytes, pos: int) -> int:
+    """Position just after the DNS name that starts at pos."""
+    while True:
+        length = message[pos]
+        if length == 0:
+            return pos + 1
+        if length & 0xC0 == 0xC0:  # a pointer to an earlier name: two bytes, and the name ends here
+            return pos + 2
+        pos += 1 + length
+
+
+def cap_ttls(message: bytes, limit: int) -> bytes:
+    """The same DNS answer with every record's time-to-live cut to `limit` seconds.
+
+    A phone reuses an answer until its time-to-live runs out, and only a new lookup can be blocked.
+    With short lifetimes phones ask again within seconds, so a block (or an unblock) takes hold at
+    the app's next connection. Only the four TTL bytes of each record are changed, in place;
+    anything we cannot read is passed on untouched."""
+    try:
+        questions, *records = struct.unpack("!HHHH", message[4:12])
+        pos = 12
+        for _ in range(questions):
+            pos = skip_name(message, pos) + 4
+        capped = bytearray(message)
+        for _ in range(sum(records)):  # answer, authority and additional sections
+            pos = skip_name(message, pos)
+            rtype, _, ttl, length = struct.unpack("!HHIH", message[pos:pos + 10])
+            if rtype != 41 and ttl > limit:  # 41 is OPT: its "ttl" field holds flags, not a time
+                capped[pos + 4:pos + 8] = struct.pack("!I", limit)
+            pos += 10 + length
+            if pos > len(message):
+                return message
+        return bytes(capped)
+    except (struct.error, IndexError):
+        return message
 
 
 def recv_exact(sock: socket.socket, n: int) -> bytes | None:
@@ -112,8 +150,9 @@ class Leases:
 
 class Sensor:
     def __init__(self, upstream: tuple[str, int], backend: str, leases: str | None,
-                 debug: bool = False, record: str | None = None) -> None:
+                 debug: bool = False, record: str | None = None, max_ttl: int = MAX_TTL) -> None:
         self.upstream = upstream
+        self.max_ttl = max_ttl
         self.backend = backend.rstrip("/")
         self.leases = Leases(leases)
         self.debug = debug
@@ -161,9 +200,10 @@ class Sensor:
 
     def resolve(self, data: bytes, request: DNSRecord, tcp: bool) -> bytes:
         try:
-            return self.forward_tcp(data) if tcp else self.forward_udp(data)
+            answer = self.forward_tcp(data) if tcp else self.forward_udp(data)
         except OSError:
             return self.reply(request, RCODE.SERVFAIL)
+        return cap_ttls(answer, self.max_ttl) if self.max_ttl > 0 else answer
 
     @staticmethod
     def reply(request: DNSRecord, rcode: int) -> bytes:
@@ -311,17 +351,21 @@ def main() -> None:
     parser.add_argument("--names", action="store_true", help="send each phone's DHCP hostname (off: phones stay unnamed)")
     parser.add_argument("--leases", default=env.get("LEASES_FILE") or DEFAULT_LEASES,
                         help="dnsmasq lease file, read only with --names")
+    parser.add_argument("--max-ttl", type=int, default=int(env.get("SENSOR_MAX_TTL") or MAX_TTL), metavar="SECONDS",
+                        help="cut the lifetime of every relayed answer to this, so phones ask again soon and blocks bite quickly (0 = leave as is)")
     parser.add_argument("--debug", action="store_true", help="print every query (development only)")
     parser.add_argument("--record", metavar="FILE", help="append events to a JSONL replay file (our own phones only)")
     args = parser.parse_args()
 
     leases = args.leases if args.names else None
-    sensor = Sensor(host_port(args.upstream, 53), args.backend, leases, args.debug, args.record)
+    sensor = Sensor(host_port(args.upstream, 53), args.backend, leases, args.debug, args.record, args.max_ttl)
     sensor.start_background()
     serve(sensor, host_port(args.listen, 5300))
     print(f"sensor: listening on {args.listen} (udp+tcp), upstream {args.upstream}, backend {args.backend}",
           file=sys.stderr, flush=True)
-    print("sensor: device names " + (f"from {leases}" if leases else "off"), file=sys.stderr, flush=True)
+    print("sensor: device names " + (f"from {leases}" if leases else "off")
+          + (f", answers kept for at most {args.max_ttl} s" if args.max_ttl > 0 else ", answer lifetimes untouched"),
+          file=sys.stderr, flush=True)
     if args.record:
         print(f"sensor: RECORDING events to {args.record}", file=sys.stderr, flush=True)
     try:

@@ -145,7 +145,7 @@ def main() -> None:
             check(bool(hit) and hit["device_id"] == "127.0.0.1" and not hit["blocked"], "its hit reached /ws, not blocked")
             with _http.open(base + "/api/state", timeout=5) as response:
                 names = {d["device_id"]: d["name"] for d in json.load(response)["devices"]}
-            check(names.get("127.0.0.1", "").startswith("Device "), f"the sensor sent no device name: shown as \"{names.get('127.0.0.1')}\"")
+            check(names.get("127.0.0.1") == "box self-test", f"lookups from this machine itself are shown as \"{names.get('127.0.0.1')}\", not as a phone")
 
             rcode, answers = dns_query(args.sensor_port, "example.net", tcp=True)
             check(rcode == 0 and answers > 0, f"example.net forwarded over TCP: rcode {rcode}, {answers} answers")

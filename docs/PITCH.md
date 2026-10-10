@@ -47,9 +47,11 @@ Hand over the iPhone: "Open <demo app> and just use it like normal."
 - Read the plain-English summary aloud.
 
 **1:30 block it (judge or B)**
-"Tap that company to block it."
-- The bubble goes grey, and the blocked counter keeps climbing: the app keeps trying.
+"Tap that company to block it. Now close the app and open it again."
+- A block stops **new** connections. What the app already has open stays open until it reconnects, so the reopen is part of the demo, not a workaround.
+- After reopening: the bubble goes grey, and the blocked counter keeps climbing: the app keeps trying.
 - The app still works.
+- Block the company, not a single name: one app uses several names of the same company.
 
 **1:50 label check (B; only if built)**
 "Here's what the App Store label says this app collects. Here's what it actually contacted. You decide."
@@ -86,6 +88,10 @@ Being the resolver means the same piece of code captures and blocks. A firewall 
 
 **Blocking**
 We return NXDOMAIN ("doesn't exist"). The app can't connect, so it often retries, and that's why the blocked counter keeps going up.
+
+- **It stops new connections, not open ones.** We act at the moment an app asks for a name. A connection that is already open never asks again, and a phone reuses an answer for as long as the answer says it may (its TTL). We found this the hard way: we blocked `discord.com`, and a message still went through.
+- **What we do about it:** our resolver shortens every answer's lifetime to 10 seconds, so the phone asks again almost at once and the block takes hold at the app's next connection. We cannot cut a connection that is already open; reopening the app does.
+- **What a block covers:** a company block covers every name we know for that company and everything under those names (Discord alone uses `discord.com`, `discord.gg` and `discordapp.net`). A single-name block covers that name and its subdomains only.
 
 **SNI (we skipped it on purpose)**
 - SNI is the site name a phone sends in plain text at the start of an encrypted connection.

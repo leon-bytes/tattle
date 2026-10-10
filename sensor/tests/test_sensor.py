@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from dnslib import QTYPE, RCODE, RR, A, DNSLabel, DNSQuestion, DNSRecord
+from dnslib import CNAME, EDNS0, QTYPE, RCODE, RR, SOA, A, DNSLabel, DNSQuestion, DNSRecord
 from dnslib.server import BaseResolver, DNSServer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -144,6 +144,40 @@ def test_forwards_over_udp_and_reports(rig):
     assert event["client_ip"] == "127.0.0.1" and event["client_name"] is None
     assert event["blocked"] is False and event["block_reason"] is None
     assert abs(event["ts"] - time.time()) < 5
+
+
+def ttls(answer):
+    return [rr.ttl for rr in answer.rr + answer.auth + answer.ar if rr.rtype != QTYPE.OPT]
+
+
+def test_answer_lifetimes_are_cut_so_blocks_bite_quickly(rig):
+    """The fake upstream answers with a 60 s lifetime; phones must get 10 s, over UDP and TCP."""
+    for tcp in (False, True):
+        answer = ask(rig.port, "example.com", tcp=tcp)
+        assert ttls(answer) == [10] and str(answer.rr[0].rdata) == ANSWER_IP
+    rig.sensor.max_ttl = 0  # the cap can be switched off
+    assert ttls(ask(rig.port, "example.com")) == [60]
+    rig.sensor.max_ttl = 300  # a cap above the real lifetime changes nothing
+    assert ttls(ask(rig.port, "example.com")) == [60]
+
+
+def test_cap_ttls_touches_only_the_lifetimes():
+    query = DNSRecord.question("www.example.com")
+    reply = query.reply()
+    reply.add_answer(RR("www.example.com", QTYPE.CNAME, rdata=CNAME("edge.example.net"), ttl=3600),
+                     RR("edge.example.net", QTYPE.A, rdata=A("192.0.2.7"), ttl=5),
+                     RR("edge.example.net", QTYPE.A, rdata=A("192.0.2.8"), ttl=86400))
+    reply.add_auth(RR("example.net", QTYPE.SOA, ttl=900, rdata=SOA("ns.example.net", "admin.example.net", (1, 2, 3, 4, 5))))
+    reply.add_ar(EDNS0(udp_len=1232))
+    packed = reply.pack()
+    capped = DNSRecord.parse(tattle_sensor.cap_ttls(packed, 10))
+    assert ttls(capped) == [10, 5, 10, 10]  # long lifetimes cut, short ones kept
+    assert [str(rr.rdata) for rr in capped.rr] == ["edge.example.net.", "192.0.2.7", "192.0.2.8"]
+    original_opt, capped_opt = DNSRecord.parse(packed).ar[0], capped.ar[0]
+    assert capped_opt.rtype == QTYPE.OPT and (capped_opt.rclass, capped_opt.ttl) == (original_opt.rclass, original_opt.ttl)  # EDNS untouched
+    assert len(tattle_sensor.cap_ttls(packed, 10)) == len(packed) and capped.header.id == reply.header.id
+    for broken in (b"", packed[:20], packed[:-3], b"\x00" * 12 + b"\xff" * 40):
+        assert tattle_sensor.cap_ttls(broken, 10) == broken  # anything unreadable is passed on as it came
 
 
 def test_forwards_over_tcp(rig):

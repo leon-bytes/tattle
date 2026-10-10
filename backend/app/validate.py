@@ -22,6 +22,11 @@ def is_ip(text: str) -> bool:
     return True
 
 
+def is_loopback(text: str) -> bool:
+    """True for 127.0.0.1 and the like: lookups the box made through its own sensor, not a phone."""
+    return is_ip(text) and ipaddress.ip_address(text).is_loopback
+
+
 def plain(text: object, limit: int) -> str | None:
     """Free text (a device name, an app label, a model's sentence) cut down to printable characters and a
     sane length. None if nothing is left. It is still only ever shown as text, never as markup."""

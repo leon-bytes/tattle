@@ -11,12 +11,13 @@ from pathlib import Path
 
 from .kb import CATEGORIES, Kb, clean
 from .summary import describe, session_stats
-from .validate import is_hostname, is_ip, plain
+from .validate import is_hostname, is_ip, is_loopback, plain
 
 MAX_HITS = 5000        # hits kept for the snapshot
 MAX_PENDING = 500      # unknown names waiting for the AI
 MAX_AI_RESULTS = 5000  # AI answers remembered; the oldest go first
 MAX_DEVICES = 256      # more phones than a hotspot can hold; later ones are ignored
+SELF_TEST = "box self-test"  # name of the "device" behind lookups the box makes through its own sensor
 DEDUPE_SECONDS = 2.0   # iPhones ask A, AAAA and HTTPS for one name at once: count that as one hit
 
 
@@ -128,11 +129,16 @@ class State:
         return {"company": None, "category": "unknown", "source": "unknown"}
 
     def _new_device(self, device_id: str, name: str | None) -> dict:
-        """Phones are "Device 1", "Device 2", ... unless a name is given: their own names stay private."""
-        self.device_count += 1
-        if not name:
+        """Phones are "Device 1", "Device 2", ... unless a name is given: their own names stay private.
+        A loopback address is the box asking its own sensor (the checklist's self-test): not a phone, not numbered."""
+        if not name and is_loopback(device_id):
+            name = SELF_TEST
+        elif not name:
+            self.device_count += 1
             name = f"Device {self.device_count}"
             self.auto_named.add(device_id)
+        else:
+            self.device_count += 1
         device = self.devices[device_id] = {"device_id": device_id, "name": name, "persist": False}
         return device
 
@@ -209,15 +215,24 @@ class State:
         self.blocklist_version += 1
         return self.blocked_message()
 
+    def company_names(self, company: str) -> list[str]:
+        """Every name a block on this company covers: its kb domains, and names the AI assigned to it."""
+        names = self.kb.company_domains(company) | {n for n, answer in self.ai_results.items() if answer["company"] == company}
+        return sorted(names)
+
+    def blocked(self) -> dict:
+        """What is blocked, and for each blocked company what that covers. A name also covers everything under it."""
+        return {"companies": sorted(self.blocked_companies), "domains": sorted(self.blocked_domains),
+                "covers": {company: self.company_names(company) for company in sorted(self.blocked_companies)}}
+
     def blocked_message(self) -> dict:
-        return {"type": "blocked", "companies": sorted(self.blocked_companies), "domains": sorted(self.blocked_domains)}
+        return {"type": "blocked", **self.blocked()}
 
     def blocklist(self) -> dict:
         """What the sensor polls: blocked domains plus every known domain of each blocked company."""
         domains = set(self.blocked_domains)
         for company in self.blocked_companies:
-            domains |= self.kb.company_domains(company)
-        domains |= {name for name, answer in self.ai_results.items() if answer["company"] in self.blocked_companies}
+            domains.update(self.company_names(company))
         return {"version": self.blocklist_version, "domains": sorted(domains)}
 
     # --- sessions and summaries ---
@@ -263,5 +278,5 @@ class State:
 
     def snapshot(self) -> dict:
         return {"type": "snapshot", "devices": list(self.devices.values()), "hits": list(self.hits),
-                "blocked": {"companies": sorted(self.blocked_companies), "domains": sorted(self.blocked_domains)},
+                "blocked": self.blocked(),
                 "session": self.session, "summary": self.summary, "health": self.health}

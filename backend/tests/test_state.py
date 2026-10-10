@@ -63,6 +63,15 @@ def test_phones_are_numbered_until_named():
     assert state.ingest([event("apple.com", ip="10.42.0.50")])[0]["name"] == "Device 1"
 
 
+def test_loopback_lookups_are_the_box_itself_and_take_no_device_number():
+    state = State(KB)
+    assert state.ingest([event("example.com", ip="127.0.0.1")])[0] == {
+        "type": "device", "device_id": "127.0.0.1", "name": "box self-test", "persist": False}
+    assert state.ingest([event("example.com", ip="::1")])[0]["name"] == "box self-test"
+    assert state.ingest([event("apple.com")])[0]["name"] == "Device 1"
+    assert state.set_device("127.0.0.1", "Renamed", None)["name"] == "Renamed"  # it can still be renamed
+
+
 def test_plumbing_names_are_ignored():
     state = State(KB)
     noise = ["lb._dns-sd._udp.0.0.42.10.in-addr.arpa", "_dns.resolver.arpa", "printer.local", "localhost", ""]
@@ -125,7 +134,8 @@ def test_failed_ai_batch_goes_back_to_the_front_of_the_queue():
 def test_blocking_a_company_expands_to_its_domains():
     state = State(KB)
     version = state.blocklist()["version"]
-    assert state.set_blocked("Google", None, True) == {"type": "blocked", "companies": ["Google"], "domains": []}
+    assert state.set_blocked("Google", None, True) == {"type": "blocked", "companies": ["Google"], "domains": [],
+                                                       "covers": {"Google": ["app-measurement.com", "doubleclick.net"]}}
     state.set_blocked(None, "Tracker.Example.COM.", True)
     blocklist = state.blocklist()
     assert blocklist["domains"] == ["app-measurement.com", "doubleclick.net", "tracker.example.com"]
@@ -138,7 +148,7 @@ def test_blocking_a_company_covers_names_the_ai_assigned_to_it():
     state = State(KB)
     state.ingest([event("odd.example.io")])
     state.apply_classified(state.take_pending(10), {"odd.example.io": {"company": "Meta", "category": "social"}})
-    state.set_blocked("Meta", None, True)
+    assert state.set_blocked("Meta", None, True)["covers"] == {"Meta": ["facebook.com", "odd.example.io"]}
     assert state.blocklist()["domains"] == ["facebook.com", "odd.example.io"]
 
 
@@ -302,11 +312,11 @@ def test_wipe_clears_everything_captured():
     state.start_session(PHONE, "Demo Game", 1000.0)
     state.refresh_summary(1001.0)
     version, generation = state.blocklist_version, state.generation
-    assert state.wipe() == [{"type": "wiped"}, {"type": "blocked", "companies": [], "domains": []},
+    assert state.wipe() == [{"type": "wiped"}, {"type": "blocked", "companies": [], "domains": [], "covers": {}},
                             {"type": "session", "session": None}]
     snapshot = state.snapshot()
     assert (snapshot["devices"], snapshot["hits"], snapshot["session"], snapshot["summary"]) == ([], [], None, None)
-    assert snapshot["blocked"] == {"companies": [], "domains": []}
+    assert snapshot["blocked"] == {"companies": [], "domains": [], "covers": {}}
     assert state.blocklist() == {"version": version + 1, "domains": []}
     assert state.generation == generation + 1
     assert not state.pending and not state.ai_results and not state.last_counted

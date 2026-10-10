@@ -73,8 +73,9 @@ function count(n, one, many) { return n + " " + (n === 1 ? one : many || one + "
 
 function render() {
   scheduled = false;
-  // One phone at a time: the session's, or else the one seen last.
-  const id = session ? session.device_id : (hits.length ? hits[hits.length - 1].device_id : null);
+  // One phone at a time: the session's, or else the one seen last. 127.0.0.1 is the box testing itself, not a phone.
+  const phones = hits.filter(h => !h.device_id.startsWith("127.") && h.device_id !== "::1");
+  const id = session ? session.device_id : (phones.length ? phones[phones.length - 1].device_id : null);
   const mine = hits.filter(h => h.device_id === id && (!session || h.ts >= session.started));
   const seen = mine.filter(h => h.block_reason !== "guard");  // guard lookups are hidden-traffic attempts, counted apart
 

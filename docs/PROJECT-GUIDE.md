@@ -2,7 +2,7 @@
 
 # Tattle: project guide
 
-**Last updated: Saturday 2026-10-10, 12:20 local time.**
+**Last updated: Saturday 2026-10-10, 14:08 local time.**
 
 ## Note to an AI reader
 
@@ -138,12 +138,12 @@ Plain-word definitions of everything the project relies on. Later sections use t
 - **Port.** A number from 1 to 65535 that says which program on a device a message is for. DNS uses port 53, our sensor listens on 5300, our backend on 8000.
 - **UDP and TCP.** Two ways of sending data. UDP sends single messages with no setup (most DNS). TCP sets up a connection first and guarantees delivery (web traffic, and DNS when an answer is too big).
 - **Loopback (`127.0.0.1`, "localhost").** An address that means "this same machine". Used for testing without a network.
-- **MAC address.** The hardware address of a network card, like `52:54:00:…`. Used inside a local network, for example by DHCP to recognize a device.
+- **MAC address.** The hardware address of a network card, like `52:54:00:…`. Used inside a local network, for example by DHCP to recognize a device. A **locally administered** MAC address (for example `02:00:00:00:00:01`) is one from the range set aside for addresses people make up themselves, as opposed to one burned into hardware by a manufacturer.
 - **DHCP.** The service that hands a device its IP address when it joins a network, and tells it which DNS server and gateway to use. A device may also tell DHCP its name (typically "<owner's name>'s iPhone"); the record of who got which address is a **lease**, kept in a **lease file**.
 - **NAT (network address translation).** What a router does so many devices can share one internet connection: it rewrites the sender address of outgoing packets to its own and remembers who to hand the replies to.
 - **Gateway.** The device that forwards your traffic to the rest of the internet. For phones on our hotspot, that is our laptop.
 - **Wi-Fi access point (AP), hotspot, SSID, WPA2.** An access point is the device phones connect to over Wi-Fi. A hotspot is a laptop or phone acting as one. The SSID is the network's name (`Tattle-Demo`). WPA2 is the password-based protection of the Wi-Fi link.
-- **Virtual interface.** A second, software-made network interface on the same Wi-Fi card. Ours is called `tattle0` and runs the hotspot, while the card's normal interface stays connected to ordinary Wi-Fi. Not every card can do both at once; ours can.
+- **Virtual interface.** A second, software-made network interface on the same Wi-Fi card. Ours is called `tattle0`. With it the card has two interfaces: one stays connected to ordinary Wi-Fi and the other runs the hotspot. Which one does which is decided by NetworkManager at start-up (section 9). Not every card can do both at once; ours can.
 - **Uplink.** Whatever gives the laptop itself internet: ordinary Wi-Fi, or a phone connected by cable ("USB tethering").
 - **NetworkManager, dnsmasq.** NetworkManager is the Linux service that manages network connections; its command-line tool is `nmcli`. For a hotspot it runs dnsmasq, a small program that does DHCP (and DNS, which we replace) for the hotspot's phones.
 - **`iw`, `tcpdump`.** `iw` is the Linux tool for Wi-Fi hardware (we use it to create the virtual interface). `tcpdump` prints the raw packets passing an interface (we used it to confirm we could see a phone's DNS).
@@ -159,7 +159,7 @@ Plain-word definitions of everything the project relies on. Later sections use t
 - **Answer codes.** Every DNS answer carries a result code. **NOERROR**: here is your answer. **NXDOMAIN**: that name does not exist. **SERVFAIL**: I could not find out. **REFUSED**: I will not answer this.
 - **Blocking by NXDOMAIN.** If we answer NXDOMAIN, the app cannot find the server and cannot connect. Apps often retry, which is why a "blocked attempts" counter keeps climbing.
 - **Suffix match.** A rule for `example.com` also covers `a.example.com` and `x.a.example.com`: we walk up the name label by label.
-- **Cache, TTL.** Devices remember answers for a while (the time to live). A name the phone looked up before it joined our hotspot may not be asked again for some time.
+- **Cache, TTL.** Devices remember answers for a while; each answer says for how long (its time to live, TTL, in seconds). A name the phone looked up before it joined our hotspot may not be asked again for some time. On our hotspot the sensor shortens every answer's TTL to 10 seconds, so the phone asks again almost at once.
 - **Encrypted DNS: DoH, DoT, DoQ.** Ways to send DNS questions encrypted, so the network cannot read them: DNS-over-HTTPS (inside ordinary web traffic, port 443), DNS-over-TLS and DNS-over-QUIC (port 853). If a phone used them, we would see nothing.
 - **DDR and `_dns.resolver.arpa`.** "Discovery of Designated Resolvers": a device asks its plain resolver, through the special name `_dns.resolver.arpa`, "do you offer an encrypted version of yourself?" iPhones do this on joining a network. We answer no.
 - **iCloud Private Relay.** An Apple service that hides a user's browsing from the network by routing it through two relays. Apple documents a way for a network to opt out: if the names `mask.icloud.com` and `mask-h2.icloud.com` do not resolve, the iPhone turns Private Relay off for that network and tells the user.
@@ -184,6 +184,7 @@ Plain-word definitions of everything the project relies on. Later sections use t
 - **Guard list.** A fixed list of names our sensor always answers NXDOMAIN for: the names a phone uses to switch to encrypted DNS or Private Relay. Blocking them makes the phone fall back to plain DNS that we can see.
 - **Hidden-traffic attempt.** A lookup of a guard-list name: the phone tried a private channel and we said no. Counted separately; not a blocked tracker.
 - **Malformed name.** A looked-up name that is not a plain host name (it contains other characters). Refused and counted, never shown.
+- **Box self-test.** A lookup the laptop makes through its own sensor to check that it works (a step of the start checklist). It comes from the loopback address, so it is not a phone; on screen it sits under the name "box self-test" and takes no device number.
 - **Session.** A stretch of time on one phone with an app name attached ("Demo Game"), started and stopped from the screen. It is how we attribute lookups to an app: we see devices, not apps.
 - **Summary.** A few sentences describing a session, written by a template or by the AI.
 - **Wipe.** Forget everything captured: the reset between two judges.
@@ -219,7 +220,7 @@ Plain-word definitions of everything the project relies on. Later sections use t
  ┌──────────────┐   Wi-Fi    ┌──────────────────────────────────────────────────────────────────┐
  │ test iPhone  │──────────▶ │ ON THE LAPTOP ITSELF ("the host")                                │
  │ (10.42.0.x)  │            │                                                                  │
- └──────────────┘            │  hotspot "Tattle-Demo" on virtual interface tattle0 (10.42.0.1)  │
+ └──────────────┘            │  hotspot "Tattle-Demo" on one of the card's two interfaces       │
                              │    NetworkManager: DHCP for phones, NAT to the uplink            │
                              │  firewall (iptables, set by box/box-up.sh):                      │
                              │    any packet to port 53 from the hotspot ──▶ sensor :5300       │
@@ -260,7 +261,7 @@ Two properties of this design matter everywhere else:
 - **The live path has no optional parts.** Phone → sensor → backend → screen works with no database, no AI and no internet access from the VM. The database and the AI are attached at the side and may fail without anyone noticing on screen (health shows it).
 - **Phones can reach only the sensor.** The firewall lets hotspot phones talk to DHCP and DNS on the laptop and to the internet, and nothing else: not the backend, not the VM.
 
-That the host reaches the VM while the Wi-Fi card runs the hotspot is expected (the VM network is separate from the Wi-Fi card) but **unverified** on the real hardware.
+That the host reaches the VM while the Wi-Fi card runs the hotspot was confirmed by the hardware test (section 9).
 
 ---
 
@@ -272,14 +273,14 @@ Follow one name from a phone to the screen. Step numbers are referred to later.
 
 1. **The app wants to connect.** Someone opens a game. An advertising SDK inside it wants to reach `ms.applovin.com`. The phone sends DNS queries for that name: usually three at once (A, AAAA, HTTPS), addressed to its DNS server. That is normally `10.42.0.1`, but a phone can also keep using another server it remembers, for example a VPN's.
 
-2. **The firewall steers it to us.** The packet arrives on the hotspot interface `tattle0`. A redirect rule sends every packet for port 53 arriving there to port 5300 on the laptop, **whatever server it was addressed to**. So we also catch apps and phones that try to use their own DNS server.
+2. **The firewall steers it to us.** The packet arrives on the hotspot interface (`tattle0` or the card's real interface, whichever got the hotspot). A redirect rule sends every packet for port 53 arriving there to port 5300 on the laptop, **whatever server it was addressed to**. So we also catch apps and phones that try to use their own DNS server.
 
 3. **The sensor decides.** The sensor reads the question and checks, in this order:
    - Not a readable DNS question, or it is an answer rather than a question: dropped silently.
    - The name is not a plain host name (it contains characters other than letters, digits, `-`, `_` and dots): answered **REFUSED**, never forwarded, and counted as *malformed*.
    - The name is on the **guard list** (or under one of its names): answered **NXDOMAIN**, reported with reason `guard`.
    - The name is on the **blocklist** fetched from the backend (or under one of its names): answered **NXDOMAIN**, reported with reason `user`.
-   - Otherwise: the question is forwarded unchanged to the upstream resolver `9.9.9.9`, and the answer is passed back unchanged. If the upstream does not answer within 3 seconds, the phone gets **SERVFAIL**.
+   - Otherwise: the question is forwarded unchanged to the upstream resolver `9.9.9.9`. The answer is passed back with one change: every record's lifetime (TTL) is cut to 10 seconds, so the phone asks again soon (this is what lets a block take hold quickly). If the upstream does not answer within 3 seconds, the phone gets **SERVFAIL**.
 
 4. **The sensor reports.** For every question it answered (except malformed ones and lookups of the DNS root), the sensor puts an event in a queue: when, which phone address, which name, which query type, whether it was blocked and why. A separate thread sends the queue to the backend every 250 ms. **Answering the phone never waits for the backend.** If the backend is down, events wait (up to 5,000, oldest dropped first) and are delivered when it is back.
 
@@ -299,7 +300,9 @@ Follow one name from a phone to the screen. Step numbers are referred to later.
 
 8. **In the background.** If an AI module is present, a background task asks the model about unknown names in small batches and broadcasts a `classified` message when it gets an answer; the screens then upgrade the hits they already show. While a session runs, a summary sentence is broadcast about every 3 seconds.
 
-**When a company is blocked.** Someone taps "block" on a company. The page sends `POST /api/block {"company": "AppLovin"}`. The backend adds the company to its block set and from then on lists all known names of that company in `/api/blocklist`. The sensor fetches that list every second. The next time the app asks for `ms.applovin.com`, step 3 answers NXDOMAIN; the app cannot connect; the event arrives as a hit with `blocked: true` and reason `user`. Apps retry, so blocked hits keep arriving. The rest of the app keeps working.
+**When a company is blocked.** Someone taps "block" on a company. The page sends `POST /api/block {"company": "AppLovin"}`. The backend adds the company to its block set and from then on lists all known names of that company in `/api/blocklist`. The sensor fetches that list every second. The next time the app **asks** for `ms.applovin.com`, step 3 answers NXDOMAIN; the app cannot connect; the event arrives as a hit with `blocked: true` and reason `user`. Apps retry, so blocked hits keep arriving. The rest of the app keeps working.
+
+**A block stops new connections, not open ones.** This matters and was learned in the live test. The sensor only gets a say when the phone asks for a name. A connection that is already open never asks again, and a phone reuses an answer it already has until that answer's lifetime runs out. So right after a block, an app can keep talking over what it already has. Two things shorten this: the 10-second lifetime the sensor puts on every answer (the phone must ask again within seconds), and closing and reopening the app (which drops its open connections). Also, an app uses several names: blocking one name of a company leaves its other names alone, which is why the demo blocks the **company**.
 
 **When it is a guard-list name.** For example `mask.icloud.com` (Private Relay) or `_dns.resolver.arpa` (the request to upgrade to encrypted DNS). Step 3 answers NXDOMAIN and reports reason `guard`. The phone gives up on that private channel and keeps using plain DNS, which we can see; an iPhone shows the user a notice that Private Relay is off for this network. On screen this is a **hidden-traffic attempt**: counted on its own, never as a blocked tracker and never as a contact to a company.
 
@@ -345,34 +348,37 @@ data/labels/              App Store privacy labels for demo apps (empty today)
 | `--upstream` | `UPSTREAM_DNS` | `9.9.9.9` | resolver to forward to; 3 s timeout, then SERVFAIL |
 | `--backend` | `BACKEND_URL` | `http://127.0.0.1:8000` | where events go and the blocklist comes from; on the box, the VM's address |
 | `--names` | | off | read each phone's DHCP name and send it. Off: phones are reported by address only |
-| `--leases` | `LEASES_FILE` | `/var/lib/NetworkManager/dnsmasq-tattle0.leases` | the lease file `--names` reads |
+| `--leases` | `LEASES_FILE` | `/var/lib/NetworkManager/dnsmasq-tattle0.leases` | the lease file `--names` reads. It is named after the hotspot interface, which may be the real one; `box-up.sh` prints the right path |
+| `--max-ttl` | `SENSOR_MAX_TTL` | `10` | cut the lifetime of every relayed answer to this many seconds; `0` leaves answers as they are |
 | `--debug` | | off | print one line per query (development only) |
 | `--record FILE` | | off | append events to a replay file, with device names replaced by "Test iPhone A", "B", … |
 
 - **The guard list** (always NXDOMAIN, matched by suffix): `mask.icloud.com`, `mask-h2.icloud.com`, `mask.apple-dns.net` (Private Relay); `_dns.resolver.arpa` (DDR); `dns.google`, `cloudflare-dns.com`, `one.one.one.one`, `dns.quad9.net`, `doh.opendns.com`, `use-application-dns.net` (well-known DNS-over-HTTPS hosts and the name some apps check before using DoH).
 - **Privacy:** names are never printed or written to disk unless `--debug` or `--record` is given. Normal output is two start lines and "backend: connected" or "backend: unreachable, queueing events".
+- **Short lifetimes:** the sensor rewrites only the four TTL bytes of each record in an upstream answer, in place; nothing else in the answer changes, and an answer it cannot read is passed on untouched. Checked against real answers with alias chains, HTTPS records and negative answers.
 - **Robustness:** events wait in memory while the backend is down (5,000 at most). A batch the backend rejects with an error status is dropped rather than resent forever. Its background threads survive network errors.
 - **Inputs:** DNS questions from phones; the blocklist from the backend. **Outputs:** DNS answers; event batches to the backend.
-- **Tests:** `sensor/tests/test_sensor.py`, 33 tests. They run a real sensor on a loopback port against a fake upstream resolver and a fake backend: forwarding over UDP and TCP, every guard name, blocklist and unblock, hostile names (markup, spaces, raw bytes, terminal escape codes, a NUL byte), batching, the backend being down and coming back, a dead upstream, lease-file names, `--names` off by default, `--record`.
+- **Tests:** `sensor/tests/test_sensor.py`, 35 tests. They run a real sensor on a loopback port against a fake upstream resolver and a fake backend: forwarding over UDP and TCP, every guard name, blocklist and unblock, hostile names (markup, spaces, raw bytes, terminal escape codes, a NUL byte), the lifetime cap on real record types, batching, the backend being down and coming back, a dead upstream, lease-file names, `--names` off by default, `--record`.
 - **Other files:** `requirements.txt` (dnslib only: this is what the laptop needs), `requirements-dev.txt` (adds pytest), `README.md`.
 
 ### 6.2 Hotspot scripts: `box/box-up.sh`, `box/box-down.sh`
 
-**Both are untested on the real hardware** (section 9). They were checked only by a dry run with stand-in commands that log what they are asked to do.
+**Passed on the real hardware on the third run** (section 9): with `box-up.sh` and the real sensor, an iPhone on the hotspot showed up live on the screen. `box-down.sh` has worked as the cleanup after two failed starts; taking down a hotspot that really ran is not confirmed.
 
 `box-up.sh <wifi-interface> [ssid]`, run with `sudo bash`:
 1. Asks for the hotspot password unless `PASSWORD` is set (8 to 63 characters; never taken as an argument, so it does not land in the process list). Refuses to run twice.
 2. Prints a warning if the VPN client (`mullvad status`) reports a connection, and carries on.
-3. Creates the virtual access-point interface `tattle0` on the Wi-Fi card (`iw dev <wifi> interface add tattle0 type __ap`).
-4. Pins the roles: tells NetworkManager never to auto-connect `tattle0` to a known Wi-Fi, and if the normal connection has jumped to it meanwhile, moves it back.
+3. Creates the virtual access-point interface `tattle0` on the Wi-Fi card, with a MAC address of its own (`iw dev <wifi> interface add tattle0 type __ap addr 02:00:00:00:00:01`; the address can be changed with `AP_MAC`). Then waits up to 10 seconds until NetworkManager lists `tattle0` as anything other than "unmanaged". If it is still unmanaged, it asks once with `nmcli device set tattle0 managed yes` and waits again; if that fails too, it stops with a clear message and cleans up.
+4. Lets NetworkManager settle, for up to 20 seconds, and does not force a layout. Adding an interface makes NetworkManager reshuffle; on our card it moves the normal Wi-Fi onto `tattle0` and frees the real interface. The script waits until one of the two interfaces has held the normal Wi-Fi for 3 seconds while the other is usable, and picks **the other one** for the hotspot. If neither is on the normal Wi-Fi after 20 seconds it carries on, with a clear warning that the hotspot will have no internet. It saves the hotspot interface's name in `/run/tattle-box.state`, a file that disappears at reboot.
 5. Adds three firewall chains of its own (gone after a reboot):
+   All three name the hotspot interface chosen in step 4.
    - `TATTLE-IN`: from the hotspot, only DHCP (67), DNS (53) and the sensor's port (5300) may reach the laptop.
    - `TATTLE-DNS` (nat): every packet to port 53 from the hotspot is redirected to port 5300.
    - `TATTLE-FWD`: from the hotspot, port 853 (DNS-over-TLS and DNS-over-QUIC) is rejected, and so is the VM's network (`VM_NET`, default `192.168.122.0/24`), so phones cannot reach the backend.
-6. Starts the NetworkManager hotspot on `tattle0`: 2.4 GHz, WPA2. NetworkManager provides DHCP and NAT. Phones get `10.42.0.x`; the laptop is `10.42.0.1`.
+6. Starts the NetworkManager hotspot on the chosen interface: 2.4 GHz, WPA2. NetworkManager provides DHCP and NAT. Phones get `10.42.0.x`; the laptop is `10.42.0.1`. It prints NetworkManager's device table before and after, and says in plain words which interface is the hotspot and which carries the internet.
 7. If anything fails halfway, it runs `box-down.sh`.
 
-`box-down.sh` removes exactly those three chains, stops and deletes the hotspot profile (it holds the password), and removes `tattle0`. Safe to run twice.
+`box-down.sh` removes exactly those three chains, stops and deletes the hotspot profile (it holds the password), and removes `tattle0`. It reads the hotspot interface's name from the state file, and also works without it by finding the rules that point at our chains. If the normal Wi-Fi was on `tattle0`, the laptop's internet drops for a few seconds until NetworkManager reconnects on the real interface. Safe to run twice.
 
 `box/README.md` holds the full host checklist and troubleshooting. The laptop needs only plain copies of `sensor/` and `box/`, side by side, anywhere; no repository checkout.
 
@@ -402,8 +408,8 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 - **Clock:** each batch from the sensor is shifted so its newest event is "now" on the backend's clock; spacing inside the batch is kept.
 - **Dedupe:** same phone and name within 2 s is one hit. The window does not slide, so an app retrying a blocked name every second still counts once per 2 s.
 - **Classification order:** overrides (searched all the way up the name), then the tracker list, then known AI answers; otherwise `unknown`.
-- **Devices:** identified by their hotspot address. Named "Device N" until renamed through the API or named by a sensor running with `--names`. At most 256.
-- **Blocking:** by company or by single domain. Blocking a company blocks every domain the knowledge base assigns to it (and names the AI assigned to it). At most 500 blocks.
+- **Devices:** identified by their hotspot address. Named "Device N" until renamed through the API or named by a sensor running with `--names`. At most 256. A loopback address (`127.0.0.1`) is the box asking its own sensor: that "device" is named "box self-test", takes no number, and is left out of device counts on the backend's pages.
+- **Blocking:** by company or by single domain. Blocking a company blocks every domain the knowledge base assigns to it (and names the AI assigned to it). At most 500 blocks. The `blocked` message lists what each company block covers, and `/debug` shows it in words, with the reminder that a block acts on new connections only.
 - **Sessions:** one at a time: a device, an optional app name, a start time. Starting a new one replaces the old.
 - **Summary:** a few short sentences made to be read aloud, for example: "In 40 seconds, Demo Game contacted 9 companies: 4 advertising (Google, AppLovin, Unity and 1 more), 2 analytics (Sentry, AppsFlyer), and 3 others. 2 lookups were blocked." A company counts once, under the category it was mostly contacted for. Advertising, analytics, social and fingerprinting are named; the rest are "others". It says "contacted", never "sent".
 - **Wipe:** clears devices, hits, blocks, the session, the summary and AI answers from memory, and deletes the running session's rows from the database. It does not delete finished sessions.
@@ -422,7 +428,7 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | `DATABASE_URL` | none | Postgres connection string; unset means no database |
 | `AI_MODEL` | none | shown as the author of AI-written sentences; `AI_BASE_URL` and `AI_TOKEN` are for `ai.py` itself |
 
-**Tests:** `backend/tests/`, 96 tests with a Postgres available (82 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
+**Tests:** `backend/tests/`, 98 tests with a Postgres available (84 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
 
 ### 6.4 Database layer (optional): `backend/app/db.py`, `backend/sql/schema.sql`
 
@@ -455,7 +461,7 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 ### 6.6 Data: `data/`
 
 - **`kb.json`**: 4,430 domains from Disconnect's list (2,738 advertising, 974 analytics, 429 content, 239 fingerprinting, 50 social), 1,877 companies. Licensed CC BY-NC-SA 4.0, like the list it is derived from; credited in the README; non-commercial use only. Never edited by hand: rebuilt with `python3 tools/build_kb.py`.
-- **`kb_overrides.json`**: 38 hand entries in three groups. Apple's system domains as `vendor` (with Apple's advertising hosts as `advertising`); the big content networks (Akamai, Fastly, CloudFront and `amazonaws.com` as "Amazon Web Services") as `content`; and phone-only SDK hosts the web-centred list lacks (Firebase, AppLovin's second domain, Unity Ads, ironSource, Vungle, Mintegral, InMobi, AppsFlyer's SDK domain).
+- **`kb_overrides.json`**: 53 hand entries in four groups. Apple's system domains as `vendor` (with Apple's advertising hosts as `advertising`); the big content networks (Akamai, Fastly, CloudFront and `amazonaws.com` as "Amazon Web Services") as `content`; phone-only SDK hosts the web-centred list lacks (Firebase, AppLovin's second domain, Unity Ads, ironSource, Vungle, Mintegral, InMobi, AppsFlyer's SDK domain); and the own servers of three apps seen in the live test, as `vendor`: Netflix (`netflix.com`, `nflxvideo.net`, `fast.com` and others), Discord (`discord.com`, `discord.gg`, `discordapp.net` and others) and OpenAI (`chatgpt.com`, `openai.com`, `oaistatic.com` and others). Other apps' own servers are deliberately left for the AI classifier.
 - **`replays/demo-synthetic.jsonl`**: 274 made-up events over 119 seconds: a phone ("Test iPhone A") joining, then a free game with ad mediation, using real public host names plus a fictional `puzzle-garden-game.example` that stays unknown on purpose. With the real knowledge base it gives 96 lookups to 13 companies and 4 hidden-traffic attempts. **It is simulated traffic, not a recording of a real phone.** No real recording exists yet.
 - **`labels/`**: empty. One file per demo app is planned (shape in section 7.8).
 - **`ai_cache_seed.json`**: does not exist. Optional (shape in 7.7).
@@ -512,9 +518,9 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 
 ```json
 {"type":"snapshot","devices":[{"device_id":"10.42.0.23","name":"Test iPhone A","persist":true}],
- "hits":[ …hit messages… ],"blocked":{"companies":[],"domains":[]},
+ "hits":[ …hit messages… ],"blocked":{"companies":[],"domains":[],"covers":{}},
  "session":null,"summary":null,
- "health":{"db":false,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4467,"malformed":0}}
+ "health":{"db":false,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4482,"malformed":0}}
 
 {"type":"device","device_id":"10.42.0.23","name":"Device 1","persist":false}
 
@@ -525,12 +531,13 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 
 {"type":"summary","device_id":"10.42.0.23","text":"In 40 seconds, Demo Game contacted 9 companies: …","by":"template"}
 
-{"type":"blocked","companies":["AppLovin"],"domains":[]}
+{"type":"blocked","companies":["AppLovin"],"domains":[],
+ "covers":{"AppLovin":["adjust.com","applovin.com","applvn.com","axon.ai","mopub.com"]}}
 
 {"type":"session","session":{"device_id":"10.42.0.23","label":"Demo Game","started":1760070000.0}}
 {"type":"session","session":null}
 
-{"type":"health","db":true,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4467,"malformed":0}
+{"type":"health","db":true,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4482,"malformed":0}
 
 {"type":"wiped"}
 ```
@@ -540,7 +547,8 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 - `hit.ts` is on the backend's clock, the same clock as `session.started`. A hit belongs to the session when the device matches and `ts >= started`.
 - `classified`: the AI named a domain that arrived as `unknown`; update the hits already shown for that `domain`.
 - `summary`: about every 3 s while a session runs and new hits arrived, once when it stops, and again if the AI writes a better one. `by` is `"template"` or the model's name.
-- `device.name` is never empty.
+- `device.name` is never empty. A device whose `device_id` is a loopback address (`127.0.0.1`, `::1`) is the box testing itself, named "box self-test": leave it out of device lists and counts.
+- `blocked.covers` says, for each blocked company, which names the block covers. Each name also covers everything under it. An empty list means no domain of that company is known, so nothing is blocked. A blocked single domain covers itself and its subdomains only.
 - `health.sensor_seen`: when the sensor last called in; older than about 10 s means it is gone. `kb`: how many domains are loaded (0 means the file is missing). `db_error`: `null`, or why the database is unusable. `malformed`: names refused since the backend started.
 - `wiped`: forget everything shown. An empty `blocked` and a `null` session follow.
 
@@ -671,7 +679,8 @@ Each entry: what we do, why, and what we decided against.
 
 1. **We are the phone's DNS resolver; we do not sniff.** Being the one who answers means the same piece of code both sees every name and can refuse to answer, so capture and blocking are one job. *Rejected:* passively listening with a packet sniffer (sees names but cannot block; kept only as a fallback plan); ARP spoofing on someone else's network, as IoT Inspector does (an attack technique, intrusive); an app or VPN profile on the phone (needs installing, which kills "hand me your phone"); decrypting traffic with a proxy (looks at content, which we promise never to do).
 2. **DNS only; no SNI capture.** DNS gives us the name before the connection even starts. Reading SNI would need packet inspection for the same information, and ECH is making SNI unreadable anyway. It is on the "don't build" list.
-3. **Block by answering NXDOMAIN.** Simple, instant, and done by the code that already answers. The app fails fast and usually retries, which makes a good "it keeps trying" counter. *Rejected:* blocking IP addresses in the firewall (one address serves many companies on a CDN), answering with a fake address (apps hang instead of failing).
+3. **Block by answering NXDOMAIN.** Simple, instant, and done by the code that already answers. The app fails fast and usually retries, which makes a good "it keeps trying" counter. It stops new connections only (see 3a). *Rejected:* blocking IP addresses in the firewall (one address serves many companies on a CDN), answering with a fake address (apps hang instead of failing).
+3a. **Every answer gets a 10-second lifetime.** A block can only act when the phone asks again, and by default it may not ask again for minutes or hours. In the live test a blocked name stayed reachable for exactly this reason. So the sensor shortens every answer's TTL to 10 seconds. The cost is more lookups, which is harmless here and makes the screen livelier. *Rejected:* leaving lifetimes alone (blocks seem broken); a lifetime of zero (some systems treat it oddly, and 10 seconds is fast enough for a demo); cutting open connections (we would have to interfere with traffic, which we do not touch).
 4. **Our own password-protected hotspot with an honest name.** The phone must use us as its gateway, and nothing may be installed on it. The network is called `Tattle-Demo`, has a WPA2 password, and is never open and never named to look official: people must know what they join.
 5. **Redirect port 53 for any destination.** In the hardware test an iPhone kept sending DNS to a leftover server (its VPN's). Relying on DHCP's "use this DNS server" alone would have missed it.
 6. **A guard list for encrypted DNS and Private Relay.** If the phone switched to DoH, DoT or Private Relay we would see nothing. We answer NXDOMAIN for the well-known names involved, and reject port 853, so the phone falls back to plain DNS. For Private Relay this is Apple's documented opt-out, and the iPhone tells its user. *Rejected:* ignoring it (blind), blocking provider IP addresses (endless list). We are open about this in the pitch.
@@ -680,7 +689,8 @@ Each entry: what we do, why, and what we decided against.
 
 **The box**
 
-9. **Hotspot and normal Wi-Fi on one card, through a virtual interface.** Observed to work on our card. It avoids a second adapter and lets the laptop keep its own internet. The script pins which interface does which job, because NetworkManager swapped them during the hand test.
+9. **Hotspot and normal Wi-Fi on one card, through a virtual interface.** Observed to work on our card. It avoids a second adapter and lets the laptop keep its own internet. The virtual interface gets a MAC address of its own: when it inherited the card's address, NetworkManager refused to manage it (section 9).
+9a. **We do not force which interface does which job.** When the virtual interface appears, NetworkManager moves the normal Wi-Fi onto it and frees the real one. The first version of the script forced it back ("pinning") so the layout would be predictable; on the real card that step failed, because the real interface was not usable at that moment. Both layouts work, so the script now waits for NetworkManager to settle and puts the hotspot on whichever interface is free; the firewall rules follow. *Rejected:* forcing the layout (fights the network manager and failed on hardware); always using the real interface for the hotspot (wrong whenever the Wi-Fi stays put).
 10. **The sensor listens on port 5300 and the firewall redirects 53 to it.** So the sensor needs no administrator rights. 5300 rather than 5353 because 5353 is mDNS and often taken.
 11. **Narrow firewall rules for hotspot phones: DHCP, DNS and 5300 only.** The hand test allowed everything on the hotspot interface. Narrower is safer when judges' phones join. Because the narrow set is untested, the one-line fallback to "allow everything" is documented in `box/README.md`.
 12. **Our own firewall chains, temporary.** Three chains with our name make it possible to remove exactly what we added. Nothing is saved across a reboot.
@@ -700,6 +710,7 @@ Each entry: what we do, why, and what we decided against.
 20. **Only our own marked phones are stored, only during a session, and the mark is never restored from the database.** Hotspot addresses get reused; a guest's phone must never inherit a lab phone's mark.
 21. **Device names are hidden by default.** A phone announces a name to DHCP that usually contains its owner's first name; on a big screen that is personal information. The sensor does not even read it unless started with `--names`, meant for our own phones.
 22. **Wipe forgets the screen; stored history has its own, separate delete.** Wipe is pressed between judges; history of our own lab phones is a feature and must survive it.
+22a. **The box's own test lookup is not a phone.** The start checklist sends one lookup through the sensor from the laptop itself. On screen it used to become "Device 1". Lookups from a loopback address are now named "box self-test" and take no number. *Rejected:* dropping them, because the same path is how the sensor is tried out on a development machine.
 
 **Turning names into companies**
 
@@ -730,7 +741,7 @@ Each entry: what we do, why, and what we decided against.
 
 - A NetworkManager hotspot works on the laptop's Wi-Fi card.
 - The card can be a normal Wi-Fi client and an access point at the same time (the driver reports: up to 2 client interfaces, 1 access point, 2 in total, on up to 2 channels). The working set-up: a second virtual interface created with `iw dev <wifi> interface add tattle0 type __ap`, normal Wi-Fi on one interface, hotspot on the other.
-- NetworkManager swapped which interface got which job. Hence the pinning in `box-up.sh`.
+- NetworkManager swapped which interface got which job: the normal Wi-Fi ended up on `tattle0` and the hotspot ran on the card's real interface. That swapped layout worked: phone online, lookups visible.
 - The iPhone could not join at first (stuck on "joining"): the laptop's firewall (it runs NixOS) dropped DHCP from hotspot phones. Allowing input on the hotspot interface fixed it. `iptables` works on that laptop.
 - Phones get `10.42.0.x`; the laptop is `10.42.0.1`.
 - At first no DNS was visible at all: the iPhone was quietly using its cellular connection instead of our Wi-Fi. Turning cellular data off forced it through us.
@@ -739,9 +750,34 @@ Each entry: what we do, why, and what we decided against.
 - With that, the iPhone was online through the laptop and its DNS lookups were visible with `tcpdump`.
 - The laptop has `tcpdump`, `iw` and Node.js. It has plain Python but no Python packages; the sensor gets its own venv with `dnslib`.
 
+**The first run of the hotspot script on the real card** (Saturday, about 13:00):
+
+- `box-up.sh` got as far as starting the hotspot and failed there. NetworkManager's message: "Connection 'tattle-hotspot' is not available on device tattle0 because device is strictly unmanaged". ("Unmanaged" means NetworkManager has decided to leave an interface alone.)
+- The script's cleanup then ran (`box-down.sh`) and worked: this is the one part of the two scripts proven on hardware.
+- Inferred, not observed directly: the hotspot start comes after the firewall section in the script, and the script stops at the first failing command, so its firewall rules must have been added without error and were then removed by the cleanup. They have not carried any traffic.
+- Found by hand afterwards: the script created `tattle0` without an address of its own, so it inherited the Wi-Fi card's MAC address, and it only waited half a second. Creating it with `addr 02:00:00:00:00:01` and waiting 3 seconds, NetworkManager listed `tattle0` as "disconnected", which means managed and ready.
+- The script now does both (section 6.2).
+
+**The second run** (Saturday, about 13:30):
+
+- The MAC address and the wait worked: NetworkManager managed `tattle0`.
+- Then NetworkManager moved the laptop's normal Wi-Fi onto `tattle0`, as in the hand test. The script's next step tried to force it back onto the real interface and failed: "Connection … is not available on device … because device is not available". The real interface was not usable at that moment.
+- The cleanup worked again.
+- Consequence: the script no longer forces a layout (section 6.2, step 4; decision 9a in section 8). **This version has not been run on the card yet.**
+
+**The third run: passed** (Saturday, about 14:00):
+
+- With the current `box-up.sh` and the real sensor on the laptop, a real iPhone joined `Tattle-Demo` and showed up live on `/debug`.
+- What that proves: the script completes on the real card; an iPhone can join with the narrow input rules and gets working internet; its lookups reach the sensor through the redirect and are answered; the sensor on the laptop reaches the backend in the VM while the hotspot is up; the screen updates live.
+- **Blocking looked broken.** `discord.com` was blocked; a Discord message still went through and the counter showed 0 blocked. The likely cause, not yet confirmed by a re-test: the phone already had the answer and reused it, Discord keeps a long-lived connection open, and it uses other names as well (`discord.gg`). DNS blocking only acts on new lookups. Since then: the sensor caps answer lifetimes at 10 seconds, `/debug` says what a block covers, Discord's names are in the knowledge base as one company, and the demo is "block the company, then close and reopen the app".
+- **"Device 1" was the laptop itself:** its own test lookup through the sensor. Now shown as "box self-test".
+- **Names the knowledge base did not know:** Netflix's (`fast.com`, `nflxvideo.net`), Discord's and OpenAI's. Added to the overrides as `vendor`.
+
 **Still unverified on hardware** (as of the timestamp at the top):
 
-- `box-up.sh` and `box-down.sh` have never run on the real card. Specifically: that `autoconnect no` is enough to stop the interface swap; that the narrow input rules let an iPhone join; that our chains sit ahead of the laptop's own firewall rules; that the hotspot hands out IPv4 only (our rules are IPv4 only).
+- **That a block visibly stops an app on the phone** (de-risk test 2). The one try predates the fixes above.
+
+- `box-down.sh` taking down a hotspot that actually ran, and NetworkManager then reconnecting the Wi-Fi on the real interface. Which of the two layouts the passing run ended up in was not recorded. Also: that the narrow input rules let an iPhone join; that our chains sit ahead of the laptop's own firewall rules; that the hotspot hands out IPv4 only (our rules are IPv4 only).
 - The sensor behind the real redirect: real phone addresses, a real iPhone, blocking actually stopping an app (de-risk test 2 below).
 - The sensor forwarding to `9.9.9.9` from the laptop. In the development VM, public resolvers were not reachable on port 53 and the VM's own resolver timed out on advertising names; whether the laptop itself is affected with its VPN off is unknown. The checklist tests it.
 - The laptop reaching the backend in the VM while the hotspot is up.
@@ -754,8 +790,8 @@ Each entry: what we do, why, and what we decided against.
 
 | # | Test | Status |
 | --- | --- | --- |
-| 1 | Hotspot up, an iPhone joins, has internet, its DNS is visible on the laptop | Passed by hand |
-| 2 | Redirected lookups reach the sensor; blocking a domain stops it working on the iPhone | **Not done yet** |
+| 1 | Hotspot up, an iPhone joins, has internet, its DNS is visible on the laptop | Passed by hand, and again with the scripts and the sensor |
+| 2 | Redirected lookups reach the sensor; blocking a domain stops it working on the iPhone | First half passed. Blocking: one try, looked broken; fixes made, **re-test pending** |
 | 3 | The model server on the AMD notebook is reachable from a laptop | Unknown to this document (AI's task) |
 | 4 | The provided Postgres is reachable from a laptop | Unknown to this document (AI's task) |
 | 5 | Find two or three free iPhone apps that light up fast; pick the demo app | **Not done yet** |
@@ -808,7 +844,7 @@ The team presents as a security team, so judges may probe.
 - **No login on the API.** Anyone who can reach port 8000 can read the state, block, and wipe. Who can reach it: the laptop itself and other virtual machines on it. Phones on the hotspot are firewalled away, and other websites are refused. For a six-minute supervised demo on our own laptop this is enough; a real product would need authentication. Decided explicitly: no login for now.
 - **No rate limit per phone in the sensor.** A phone flooding lookups could slow the laptop. Only invited phones join, for minutes.
 - **DNS rebinding is not handled.** A malicious website could, in theory, make the demo browser treat the backend as "its own site". It would need the presenter to browse to such a site on the demo laptop during the demo.
-- **The hotspot firewall rules are untested on hardware.**
+- **Two firewall rules have not been challenged.** The redirect and the input rules worked in the hardware test. The two reject rules (port 853, and phones reaching the VM's network) are in place, but nobody has tried to get past them.
 
 These are written down openly in the challenges log as well; saying them unprompted is part of the pitch.
 
@@ -828,6 +864,7 @@ What Tattle cannot see, why, and the sentence for a judge.
 | What is actually sent | We never look at content | "We see who was contacted, not what was said. That is a promise, not only a limit." |
 | Which app made a lookup | DNS shows the device, not the app | "We attribute by session: what the phone did while you used this one app. The phone's own background chatter can mix in; we label the phone maker's servers as 'vendor'." |
 | Unknown companies | No list knows every name | "Unknown names go to an open model, and we label its answer as a guess." |
+| Connections already open, and answers the phone already has | DNS blocking acts only when the phone asks for a name | "A block stops new connections. We make the phone ask again within ten seconds, and reopening the app drops what it had open. We don't cut connections: we never touch the traffic itself." |
 
 Other limits of the current build:
 - Session numbers (summary, label check) are computed from the last 5,000 lookups kept in memory. A very long, very busy session would undercount there; the database history does not have this limit.
@@ -855,13 +892,13 @@ Then open `http://127.0.0.1:8000/debug` (controls and a live table) or `/present
 
 ```sh
 python3 -m venv sensor/.venv && sensor/.venv/bin/pip install -r sensor/requirements-dev.txt   # once
-sensor/.venv/bin/python -m pytest sensor/tests       # 33 tests, about 50 s
-backend/.venv/bin/python -m pytest backend/tests     # 82 tests; 14 database tests are skipped
+sensor/.venv/bin/python -m pytest sensor/tests       # 35 tests, about 50 s
+backend/.venv/bin/python -m pytest backend/tests     # 84 tests; 14 database tests are skipped
 backend/.venv/bin/python tools/selfcheck.py          # end to end on loopback, 20 checks
 
 # with a throwaway Postgres for the database tests:
 podman run -d --rm --name tattle-pg-test -e POSTGRES_PASSWORD=tattle-test -p 127.0.0.1:55432:5432 docker.io/library/postgres:17-alpine
-TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 96 tests
+TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 98 tests
 podman stop tattle-pg-test
 ```
 
@@ -873,16 +910,16 @@ Done once beforehand: the backend venv in the VM; copies of `sensor/` and `box/`
 | --- | --- | --- | --- |
 | 1 | Laptop | start the VM; plug in the uplink | |
 | 2 | Laptop | `mullvad disconnect` | VPN off |
-| 3 | Laptop | `sudo bash box/box-up.sh <wifi-interface>` (asks for the hotspot password) | `tattle0 … 10.42.0.1/24` |
+| 3 | Laptop | `sudo bash box/box-up.sh <wifi-interface>` (asks for the hotspot password; up to half a minute) | `HOTSPOT: … runs on <interface>` and `INTERNET: … is on <interface>` |
 | 4 | Laptop | `sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000` | `backend: connected` |
 | 5 | VM | `bash backend/start.sh` | the addresses to open |
 | 6 | Laptop browser | `http://<vm-ip>:8000/`, full screen | the page; sensor shown as alive |
 | 7 | iPhone | joins `Tattle-Demo` | "Device 1" appears |
 | 8 | Page | Wipe | empty screen, ready |
 
-Between steps 3 and 4 phones on the hotspot have no DNS. Afterwards: stop the sensor, then `sudo bash box/box-down.sh`.
+Between steps 3 and 4 phones on the hotspot have no DNS. The laptop's own test lookup shows on the page as "box self-test". Afterwards: stop the sensor, then `sudo bash box/box-down.sh`.
 
-**The talk** (about 3:30): hook ("Your phone talks to dozens of companies you've never heard of. Want to see who?"); the consent line; hand over the iPhone and start a session named after the app; narrate as the screen fills, read the summary aloud; block a company and watch the blocked counter climb while the app keeps working; the label check, if labels exist; how it works, with the diagram; honest limits and the AI tools we used; close ("Anyone can hand a phone to Tattle and get the truth in a minute, with nothing to install").
+**The talk** (about 3:30): hook ("Your phone talks to dozens of companies you've never heard of. Want to see who?"); the consent line; hand over the iPhone and start a session named after the app; narrate as the screen fills, read the summary aloud; block a company, have the app closed and reopened (a block stops new connections, not open ones), and watch the blocked counter climb while the app keeps working; the label check, if labels exist; how it works, with the diagram; honest limits and the AI tools we used; close ("Anyone can hand a phone to Tattle and get the truth in a minute, with nothing to install").
 
 **Fallbacks:**
 
@@ -941,9 +978,9 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 
 | Part | State |
 | --- | --- |
-| Sensor | Complete. 33 tests. Real DNS forwarding, guard list, blocklist, refusal of odd names, batching, surviving a backend outage |
-| Backend core | Complete. 96 tests with Postgres, 82 without. Events, classification, devices, blocking, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal |
-| Knowledge base | First version: 4,430 domains from Disconnect plus 38 overrides. Checked only against the simulated replay |
+| Sensor | Complete. 35 tests. Real DNS forwarding, guard list, blocklist, refusal of odd names, the 10-second lifetime cap, batching, surviving a backend outage. **Ran on the real laptop in the hardware test** |
+| Backend core | Complete. 98 tests with Postgres, 84 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
+| Knowledge base | First version: 4,430 domains from Disconnect plus 53 overrides. Checked against the simulated replay; the live test showed gaps for apps' own servers, three of which were filled |
 | Label fact-check | Endpoint complete, tested with stand-in label files. No real labels exist |
 | Database layer and history endpoints | Complete, tested against Postgres 17 in a container. Not yet connected to the organizers' Postgres |
 | AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, failures, time-outs). No real `ai.py` |
@@ -953,9 +990,9 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 | Soak test | 10.5 minutes at about 25 lookups a second with two backend restarts: backend memory flat at about 79 MB once the 5,000-lookup buffer was full, sensor at 26 MB, the sensor kept answering and delivered everything it had queued, clients reconnected within 7 s. Two lookups in about 400 failed; traced to the development VM's upstream resolver taking over 3 s |
 | Start script, runbook, quickstarts | Written; the VM-side steps were run |
 
-### Written but untested on hardware
+### Hotspot scripts: passed on hardware
 
-`box/box-up.sh` and `box/box-down.sh` (dry run with stand-in commands only), and everything listed as unverified in section 9.
+`box/box-up.sh` passed on the third real run: an iPhone on the hotspot showed up live on the screen (section 9). `box/box-down.sh` has worked twice as the cleanup after a failed start; taking down a hotspot that really ran is not confirmed. Blocking on a real phone is **not confirmed**: the one try looked broken and the fixes are not re-tested. The remaining unverified items are listed in section 9.
 
 ### Not built
 
@@ -986,13 +1023,12 @@ None open at the time of writing. Known limits are in sections 11 and 12.
 ### Next tasks, by role, in priority order
 
 **BOX**
-1. Run the hardware checklist in `box/README.md` on the laptop: first real run of `box-up.sh`, the sensor behind the redirect, an iPhone showing up on `/debug`. Fix what breaks.
-2. De-risk test 2: block a company and confirm the app on the iPhone really loses it.
-3. Pick the demo apps with AI (de-risk test 5).
-4. Record a real session from our own phone with `--record`, so replay mode is real traffic.
-5. Connect the organizers' Postgres (`DATABASE_URL` in `.env`), check `health.db`.
-6. Integrate FRONT's build and AI's `ai.py` when they land; re-run all tests.
-7. Time the runbook on the real laptop; fresh-boot test on Sunday morning.
+1. Re-test blocking on the real phone with the new sensor (de-risk test 2): block the company, close and reopen the app, confirm the blocked counter climbs and the app loses that company. Copy the changed `sensor/` to the laptop first.
+2. Pick the demo apps with AI (de-risk test 5).
+3. Record a real session from our own phone with `--record`, so replay mode is real traffic.
+4. Connect the organizers' Postgres (`DATABASE_URL` in `.env`), check `health.db`.
+5. Integrate FRONT's build and AI's `ai.py` when they land; re-run all tests.
+6. Time the runbook on the real laptop; fresh-boot test on Sunday morning.
 
 **FRONT** (start with `docs/FRONT-QUICKSTART.md`)
 1. Connect to `/ws` and draw the live bubble graph from `hit` messages.
@@ -1039,6 +1075,12 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 | 10:30 | SQL injection check | Parameters only, verified by tests |
 | 10:35 | Not fixed: no login, no per-phone rate limit, no DNS-rebinding defence | Known limits, said openly |
 | 10:55 | Would it survive ten minutes of load and a crash? | Soak test passed (section 16) |
+| 13:00 | First run of the hotspot script on the real card failed: NetworkManager called the new interface "strictly unmanaged" | It had inherited the card's MAC address; with its own address and a few seconds' wait it was managed. Confirmed in the second run |
+| 13:30 | Second run: NetworkManager moved the normal Wi-Fi onto the new interface and our step that forced it back failed | We stopped forcing a layout: the hotspot goes on whichever interface is free, the firewall rules follow |
+| 14:00 | (milestone) Third run passed | A real iPhone on the hotspot shows up live on the screen, through the script and the real sensor |
+| 14:00 | Blocking looked broken: a blocked app kept working and the counter stayed at 0 | DNS blocking acts on new lookups only. Answers now live 10 seconds, the screen says what a block covers, and the demo is: block the company, reopen the app. Re-test pending |
+| 14:00 | "Device 1" was the laptop's own test lookup | Shown as "box self-test", not numbered |
+| 14:00 | Real traffic hit names no list knew (Netflix, Discord, OpenAI) | Their own servers added to the hand-written list as "vendor"; the rest is for the AI |
 
 ---
 
@@ -1046,5 +1088,8 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 
 | When | What changed in this guide |
 | --- | --- |
+| Sat 2026-10-10 14:08 | **Hardware test passed** on the third run. Findings from it: blocking acts on new connections only (sensor now caps answer lifetimes at 10 s with `--max-ttl`; `/debug` shows what a block covers; `blocked` messages carry `covers`); the laptop's own test lookup is shown as "box self-test"; Netflix, Discord and OpenAI added to the overrides (53 entries). Sections 3, 4, 5, 6, 7.5, 8 (3a, 22a), 9, 11, 12, 13, 16, 17 updated. Blocking is not yet re-tested on a real phone. |
+| Sat 2026-10-10 13:34 | Second hardware run: the MAC address fix worked; the run then failed where the script forced the Wi-Fi back onto the real interface. `box-up.sh` no longer forces a layout: it waits for NetworkManager to settle, runs the hotspot on the free interface, and records it in a state file for `box-down.sh`. Sections 3, 4, 5, 6.2, 8 (new decision 9a), 9, 13, 16, 17 updated. Not yet re-run on hardware. |
+| Sat 2026-10-10 13:14 | First hardware run of `box-up.sh` failed at the hotspot start (interface "strictly unmanaged"); cause found by hand; script changed to give `tattle0` its own MAC address and to wait for NetworkManager to manage it. Sections 3, 6.2, 8, 9, 16, 17 updated. The changed script is not yet re-run on hardware. |
 | Sat 2026-10-10 12:20 | Marked as an internal document, with the checklist for the day the repository goes public (section 15). No change to the project itself. |
 | Sat 2026-10-10 12:15 | First version. Describes the project after four overnight work batches by BOX: sensor, backend, database layer, knowledge base v1, label check, security pass, soak test, runbook, presenter page. No frontend, no `ai.py`, no label files exist yet; the hotspot scripts are untested on hardware. |

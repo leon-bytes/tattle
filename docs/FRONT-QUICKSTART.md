@@ -57,13 +57,13 @@ All examples below are real, captured from one run of the replay.
 ```json
 {"type": "snapshot",
  "devices": [{"device_id": "10.42.0.23", "name": "Test iPhone A", "persist": true}, {"device_id": "10.42.0.31", "name": "Device 2", "persist": false}],
- "hits": [{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791644123.897},
-          {"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791644123.908},
+ "hits": [{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791655719.712},
+          {"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791655719.724},
           … 191 more hits …],
- "blocked": {"companies": [], "domains": ["tracker.example.com"]},
+ "blocked": {"companies": [], "domains": ["tracker.example.com"], "covers": {}},
  "session": null,
  "summary": {"type": "summary", "device_id": "10.42.0.23", "text": "While Demo Game was open for 28 seconds, this phone contacted mostly advertising companies, led by Google, Apple, AppLovin.", "by": "demo-model"},
- "health": {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791644152.6961539, "kb": 4467, "malformed": 1}}
+ "health": {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791655748.4878745, "kb": 4482, "malformed": 1}}
 ```
 
 **`device`**: a phone appeared, or its name or `persist` flag changed
@@ -73,16 +73,16 @@ All examples below are real, captured from one run of the replay.
 {"type": "device", "device_id": "10.42.0.31", "name": "Device 2", "persist": false}
 ```
 
-Live phones are "Device 1", "Device 2", … until someone renames them. The replay's phone carries its name in the file.
+Live phones are "Device 1", "Device 2", … until someone renames them. The replay's phone carries its name in the file. A device whose `device_id` is `127.0.0.1` (or `::1`) is the box testing its own sensor, named "box self-test": leave it out of device lists and counts.
 
 **`hit`**: one lookup. This is the stream that feeds the bubbles.
 
 ```json
-{"type": "hit", "device_id": "10.42.0.23", "domain": "graph.facebook.com", "company": "Meta", "category": "social", "source": "list", "blocked": false, "block_reason": null, "ts": 1791644124.811}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791644123.897}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "api.puzzle-garden-game.example", "company": null, "category": "unknown", "source": "unknown", "blocked": false, "block_reason": null, "ts": 1791644124.728}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "ms.applovin.com", "company": "AppLovin", "category": "advertising", "source": "list", "blocked": true, "block_reason": "user", "ts": 1791644138.557}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791644123.908}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "graph.facebook.com", "company": "Meta", "category": "social", "source": "list", "blocked": false, "block_reason": null, "ts": 1791655720.63}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791655719.712}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "api.puzzle-garden-game.example", "company": null, "category": "unknown", "source": "unknown", "blocked": false, "block_reason": null, "ts": 1791655720.547}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "ms.applovin.com", "company": "AppLovin", "category": "advertising", "source": "list", "blocked": true, "block_reason": "user", "ts": 1791655734.365}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791655719.724}
 ```
 
 - `category`: `advertising`, `analytics`, `social`, `fingerprinting`, `content`, `vendor`, `unknown`. `company` is `null` when unknown.
@@ -104,23 +104,23 @@ Live phones are "Device 1", "Device 2", … until someone renames them. The repl
 {"type": "summary", "device_id": "10.42.0.23", "text": "While Demo Game was open for 28 seconds, this phone contacted mostly advertising companies, led by Google, Apple, AppLovin.", "by": "demo-model"}
 ```
 
-**`blocked`**: the full block list after any change
+**`blocked`**: the full block list after any change. `covers` says which names each company block covers (each name also covers everything under it); show it, so people see what "block AppLovin" means.
 
 ```json
-{"type": "blocked", "companies": ["AppLovin"], "domains": []}
+{"type": "blocked", "companies": ["AppLovin"], "domains": [], "covers": {"AppLovin": ["adjust.com", "applovin.com", "applvn.com", "axon.ai", "mopub.com"]}}
 ```
 
 **`session`**: a session started, or stopped (`null`)
 
 ```json
-{"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791644123.7855482}}
+{"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791655719.5896008}}
 {"type": "session", "session": null}
 ```
 
 **`health`**: every 5 s, and at once when something changes
 
 ```json
-{"type": "health", "db": true, "db_error": null, "ai": false, "sensor_seen": 1791644124.0863652, "kb": 4467, "malformed": 0}
+{"type": "health", "db": true, "db_error": null, "ai": false, "sensor_seen": 1791655719.9024026, "kb": 4482, "malformed": 0}
 ```
 
 - `sensor_seen` is the time the sensor last called in (seconds since 1970, backend clock). Older than about 10 s means the sensor is gone.
@@ -139,13 +139,13 @@ Every answer is JSON. Each change is also broadcast on the socket, so you can ig
 
 ```
 POST /api/block  {"company": "AppLovin"}
-→ 200  {"type": "blocked", "companies": ["AppLovin"], "domains": []}
+→ 200  {"type": "blocked", "companies": ["AppLovin"], "domains": [], "covers": {"AppLovin": ["adjust.com", "applovin.com", "applvn.com", "axon.ai", "mopub.com"]}}
 
 POST /api/unblock  {"company": "AppLovin"}
-→ 200  {"type": "blocked", "companies": [], "domains": []}
+→ 200  {"type": "blocked", "companies": [], "domains": [], "covers": {}}
 
 POST /api/block  {"domain": "tracker.example.com"}
-→ 200  {"type": "blocked", "companies": [], "domains": ["tracker.example.com"]}
+→ 200  {"type": "blocked", "companies": [], "domains": ["tracker.example.com"], "covers": {}}
 
 POST /api/block  {}
 → 422  {"detail": "give a company or a domain"}
@@ -154,7 +154,7 @@ POST /api/devices/10.42.0.23  {"name": "Test iPhone A", "persist": true}
 → 200  {"type": "device", "device_id": "10.42.0.23", "name": "Test iPhone A", "persist": true}
 
 POST /api/session/start  {"device_id": "10.42.0.23", "label": "Demo Game"}
-→ 200  {"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791644123.7855482}}
+→ 200  {"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791655719.5896008}}
 
 POST /api/session/stop
 → 200  {"type": "session", "session": null}
@@ -163,7 +163,7 @@ POST /api/wipe
 → 200  {"type": "wiped"}
 
 GET /api/health
-→ 200  {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791644152.6961539, "kb": 4467, "malformed": 1}
+→ 200  {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791655748.4878745, "kb": 4482, "malformed": 1}
 
 GET /api/state
 → 200  the snapshot above
@@ -177,7 +177,7 @@ GET /api/label-check?app=<name> the same session against another label
 ```
 
 ```json
-{"session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791644123.7855482, "stopped": null},
+{"session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791655719.5896008, "stopped": null},
  "label": {"app": "Demo Game", "source_url": "https://apps.apple.com/app/id0000000000", "checked": "2026-10-10", "data_used_to_track_you": [], "data_linked_to_you": ["Identifiers", "Usage Data"], "data_not_linked_to_you": ["Diagnostics"], "data_not_collected": false},
  "observed": {"seconds": 28, "lookups": 184, "blocked": 13, "hidden_attempts": 8,
               "by_category": {"advertising": 110, "vendor": 38, "analytics": 20, "content": 10, "social": 6}, "companies": [{"company": "Google", "category": "advertising", "hits": 38}, {"company": "Apple", "category": "vendor", "hits": 30}, {"company": "AppLovin", "category": "advertising", "hits": 26}, {"company": "Unity", "category": "advertising", "hits": 18}, … 10 more …], "advertising_companies": 11, "tracking_companies": 12},
@@ -197,7 +197,7 @@ GET /api/label-check?app=<name> the same session against another label
 
 ```
 GET /api/history/sessions
-→ 200  {"sessions": [{"id": "33e13481-4fe8-4911-9a4e-16b1204fc9d2", "device_id": "10.42.0.23", "device_name": "Test iPhone A", "label": "Demo Game", "started": 1791644123.785548, "stopped": 1791644152.697522, "hits": 184, "blocked": 13, "hidden_attempts": 8, "companies": 14, "top_companies": [["Google", 38], ["Apple", 30], ["AppLovin", 26], ["Unity", 18], ["Meta", 12]]}]}
+→ 200  {"sessions": [{"id": "6f041f31-e10a-4161-ab0b-9d1a63c9b002", "device_id": "10.42.0.23", "device_name": "Test iPhone A", "label": "Demo Game", "started": 1791655719.589601, "stopped": 1791655748.48913, "hits": 184, "blocked": 13, "hidden_attempts": 8, "companies": 14, "top_companies": [["Google", 38], ["Apple", 30], ["AppLovin", 26], ["Unity", 18], ["Meta", 12]]}]}
 
 GET /api/history/top-companies?limit=3
 → 200  {"labels": [{"label": "Demo Game", "sessions": 1, "hits": 184, "hidden_attempts": 8, "top_companies": [{"company": "Google", "category": "advertising", "hits": 38, "blocked": 0, "sessions": 1}, {"company": "Apple", "category": "vendor", "hits": 30, "blocked": 0, "sessions": 1}, {"company": "AppLovin", "category": "advertising", "hits": 26, "blocked": 13, "sessions": 1}]}]}
@@ -212,6 +212,7 @@ POST /api/history/clear
 ## 5. Things that bite
 
 - **Names on screen:** always use `device.name`. It is never empty.
+- **A block stops new connections, not open ones.** After a block, an app can keep talking over a connection it already has; blocked lookups only start arriving when it reconnects (phones re-ask within about 10 s). Say so next to the block button, for example "close and reopen the app". Offer blocking by company: one app uses several names.
 - **Times:** `ts`, `started`, `stopped` and `sensor_seen` are seconds since 1970 on the backend's clock, as floats. Multiply by 1000 for `new Date()`.
 - **Sessions and hits:** a hit belongs to the session when `hit.device_id === session.device_id` and `hit.ts >= session.started`.
 - **Nothing here needs a login**, and nothing is stored unless a phone is marked `persist`.

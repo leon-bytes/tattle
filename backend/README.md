@@ -142,7 +142,8 @@ The backend reads environment variables only, not `.env` itself. To load `.env` 
 - **Ignored names:** anything ending in `.arpa` or `.local`, and names without a dot.
 - **Device names:** phones are "Device 1", "Device 2", … until renamed (`POST /api/devices/{id}`) or named by a sensor started with `--names`.
 - **Knowledge base:** `data/kb_overrides.json` is searched first, so an override wins over `data/kb.json` for its name and everything under it.
-- **Blocking:** by company or by domain. `/api/blocklist` expands each blocked company into its kb domains. Blocked lookups still arrive as hits, with `blocked: true`.
+- **Blocking:** by company or by domain. `/api/blocklist` expands each blocked company into its kb domains. Blocked lookups still arrive as hits, with `blocked: true`. The `blocked` message says what each company block covers (`covers`), and `/debug` shows it. A block acts on new lookups only: an open connection stays open until the app reconnects.
+- **The box itself:** lookups from a loopback address (the self-test in the start checklist, or `dig` on the same machine) appear under the device "box self-test", which takes no device number and is left out of device counts.
 - **Hidden-traffic attempts:** guard-list lookups (the phone trying encrypted DNS or Private Relay) arrive as hits with `block_reason: "guard"`. They are counted on their own everywhere: not as blocked trackers, and not towards a company.
 - **Label check:** `GET /api/label-check` returns the App Store privacy label for the session's app name next to what the session contacted, with a rule-based one-line verdict. Labels are the files in `data/labels/`; the shape is in docs/TEAM.md.
 - **Summary:** a few short sentences made to be read aloud, for example "In 40 seconds, Demo Game contacted 9 companies: 4 advertising (Google, AppLovin, Unity and 1 more), 2 analytics (Sentry, AppsFlyer), and 3 others." A company counts once, under what it was mostly contacted for.

@@ -77,7 +77,7 @@ def test_request_limits(client):
     assert client.get("/api/label-check", params={"app": "x" * 101}).status_code == 422
     assert client.get("/api/history/sessions", params={"limit": "many"}).status_code == 422
     state = client.get("/api/state").json()
-    assert (state["devices"], state["session"], state["blocked"]) == ([], None, {"companies": [], "domains": []})
+    assert (state["devices"], state["session"], state["blocked"]) == ([], None, {"companies": [], "domains": [], "covers": {}})
 
 
 def test_block_list_is_bounded(client, monkeypatch):

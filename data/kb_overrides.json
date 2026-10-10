@@ -1,5 +1,5 @@
 {
-  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Three groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), and phone-only SDK hosts the web-centred Disconnect list lacks.",
+  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Four groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), phone-only SDK hosts the web-centred Disconnect list lacks, and the own servers of a few well-known apps seen in live tests (vendor: Netflix, Discord, OpenAI). Everything else unknown is left to the AI classifier.",
   "domains": {
     "apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
     "push.apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
@@ -41,6 +41,22 @@
     "ironsrc.mobi": {"company": "Unity", "category": "advertising", "source": "override"},
     "vungle.com": {"company": "Liftoff Mobile", "category": "advertising", "source": "override"},
     "rayjump.com": {"company": "Mintegral", "category": "advertising", "source": "override"},
-    "inmobi.com": {"company": "InMobi", "category": "advertising", "source": "override"}
+    "inmobi.com": {"company": "InMobi", "category": "advertising", "source": "override"},
+
+    "netflix.com": {"company": "Netflix", "category": "vendor", "source": "override"},
+    "nflxvideo.net": {"company": "Netflix", "category": "vendor", "source": "override"},
+    "nflximg.net": {"company": "Netflix", "category": "vendor", "source": "override"},
+    "nflxext.com": {"company": "Netflix", "category": "vendor", "source": "override"},
+    "nflxso.net": {"company": "Netflix", "category": "vendor", "source": "override"},
+    "fast.com": {"company": "Netflix", "category": "vendor", "source": "override"},
+    "discord.com": {"company": "Discord", "category": "vendor", "source": "override"},
+    "discord.gg": {"company": "Discord", "category": "vendor", "source": "override"},
+    "discord.media": {"company": "Discord", "category": "vendor", "source": "override"},
+    "discordapp.com": {"company": "Discord", "category": "vendor", "source": "override"},
+    "discordapp.net": {"company": "Discord", "category": "vendor", "source": "override"},
+    "openai.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
+    "chatgpt.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
+    "oaistatic.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
+    "oaiusercontent.com": {"company": "OpenAI", "category": "vendor", "source": "override"}
   }
 }

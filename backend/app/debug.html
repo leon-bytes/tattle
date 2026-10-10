@@ -41,7 +41,9 @@
   <button id="wipe">Wipe</button>
 </div>
 
-<div class="bar"><span>Blocked:</span><span id="blocked" class="bar"></span>
+<div class="bar"><span>Blocked:</span><span id="blocked" class="bar"></span></div>
+<div id="covers" class="dim"></div>
+<div class="bar">
   <span class="dim">History (needs the database):</span>
   <a href="/api/history/sessions">sessions</a> <a href="/api/history/top-companies">top companies per app</a>
   <span class="dim">Label check for the session:</span> <a href="/api/label-check">verdict</a>
@@ -75,6 +77,9 @@ function post(path, body) {
 
 function deviceName(id) { return (devices[id] && devices[id].name) || id; }
 
+// 127.0.0.1 is the box asking its own sensor (the checklist's self-test), not a phone.
+function isLoopback(id) { return id.startsWith("127.") || id === "::1"; }
+
 function renderStatus() {
   const flag = (label, ok, why) => {
     const pill = el("span", label + (ok ? " ✓" : " ✗"), "pill " + (ok ? "ok" : "bad"));
@@ -90,7 +95,7 @@ function renderStatus() {
     el("span", counts.hits + " hits, " + counts.blocked + " blocked", "pill"),
     el("span", counts.hidden + " hidden-traffic attempts", "pill"),
     el("span", (health.malformed ?? 0) + " malformed names refused", "pill"),
-    el("span", Object.keys(devices).length + " devices", "pill"));
+    el("span", Object.keys(devices).filter(id => !isLoopback(id)).length + " devices", "pill"));
 }
 
 function renderDevices() {
@@ -118,6 +123,17 @@ function renderBlocked() {
   };
   const items = [...blocked.companies.map(c => pill(c, {company: c})), ...blocked.domains.map(d => pill(d, {domain: d}))];
   $("blocked").replaceChildren(...(items.length ? items : [el("span", "nothing", "dim")]));
+
+  // Say what each block covers, and when it bites: a phone keeps using answers and connections it already has.
+  const covers = blocked.covers || {};
+  const lines = blocked.companies.map(company => {
+    const names = covers[company] || [];
+    if (!names.length) return company + ": no domain of this company is known, so nothing is blocked yet";
+    const shown = names.slice(0, 8).join(", ") + (names.length > 8 ? " and " + (names.length - 8) + " more" : "");
+    return company + ": every name of the company, " + names.length + " in all, and everything under them (" + shown + ")";
+  }).concat(blocked.domains.map(domain => domain + ": that name and everything under it (other names of the same company are not covered)"));
+  if (lines.length) lines.push("A block stops new connections only. On the phone, close the app and open it again to see it take hold.");
+  $("covers").replaceChildren(...lines.map(line => el("div", line)));
 }
 
 function addHit(hit) {

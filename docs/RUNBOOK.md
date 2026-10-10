@@ -22,7 +22,7 @@ The clock starts at the host's desktop. Steps 2 to 4 are typed on the host in th
 | --- | --- | --- | --- |
 | 1 | Host | `virsh -c qemu:///system start <vm-name>` (skip if the VM is running). Plug in the USB-tethered phone. | `Domain '<vm-name>' started` |
 | 2 | Host | `mullvad disconnect` | `Disconnected` |
-| 3 | Host | `sudo bash box/box-up.sh <wifi-interface>` and type the hotspot password | `tattle0 … 10.42.0.1/24` |
+| 3 | Host | `sudo bash box/box-up.sh <wifi-interface>` and type the hotspot password (it may take up to half a minute) | `HOTSPOT: … runs on <interface>` with `10.42.0.1/24`, and `INTERNET: the normal Wi-Fi … is on <interface>` |
 | 4 | Host, own terminal | `sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000` | `sensor: listening on …`, later `backend: connected` |
 | 5 | VM, terminal | `bash backend/start.sh` | `Tattle backend starting.` and the addresses |
 | 6 | Host, browser | open `http://<vm-ip>:8000/` and press F11 | the page; the sensor pill turns green |
@@ -31,6 +31,8 @@ The clock starts at the host's desktop. Steps 2 to 4 are typed on the host in th
 
 - Steps 3 and 4 belong together: between them, phones on the hotspot have no DNS.
 - Step 5 can be done while steps 2 to 4 run. The sensor waits for the backend and loses nothing.
+- To show blocking: block the company, then have the app closed and opened again. A block stops new connections, not ones already open.
+- "box self-test" on the page is the laptop's own test lookup, not a phone.
 - For the history view: after the Wipe, mark our own phone as `persist` (on `/debug`), then start the session. Never a judge's phone.
 - What each command does: `virsh … start` boots the VM; `mullvad disconnect` turns the VPN off; `box-up.sh` creates the hotspot and the DNS redirect; `start.sh` runs the backend on port 8000 for the host to reach, with the frontend build at `/` if there is one, otherwise the debug page.
 

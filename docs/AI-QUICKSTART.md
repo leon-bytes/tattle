@@ -102,7 +102,7 @@ python3 tools/build_kb.py     # downloads Disconnect's list, rewrites data/kb.js
 ```
 
 - `data/kb.json`: about 4,400 domains from Disconnect's list. Never edit by hand; rebuild.
-- `data/kb_overrides.json`: hand fixes, same shape. An override wins over `kb.json` for its name and everything under it.
+- `data/kb_overrides.json`: hand fixes, same shape. An override wins over `kb.json` for its name and everything under it. It holds Apple's system domains, the big CDNs, phone-only SDK hosts, and the own servers of three apps seen in the live test (Netflix, Discord, OpenAI, as `vendor`). Other well-known apps are left for your classifier.
 - The note at the top of `tools/build_kb.py` lists what v1 decided and what deserves a second look.
 - Restart the backend to load changes. `health.kb` shows how many domains it read.
 

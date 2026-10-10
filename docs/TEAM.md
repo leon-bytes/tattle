@@ -99,6 +99,7 @@ Each owner edits only their own folders. Shared files: this doc, `docs/PITCH.md`
 
 - Suffix match, same as the kb.
 - The sensor polls every second. If the backend is down, the sensor keeps the last list and keeps resolving.
+- **Added by BOX: a block stops new connections, not open ones.** DNS blocking acts when an app asks for a name. An answer the phone already has, or a connection that is already open, is not touched. The sensor therefore cuts the lifetime (TTL) of every answer it relays to 10 s (`--max-ttl`), so phones ask again within seconds and a block or unblock takes hold at the app's next connection. For the demo: block, then close and reopen the app.
 
 ### Built-in guard list (the sensor always answers NXDOMAIN)
 
@@ -138,6 +139,8 @@ The first message on connect is a full snapshot, then individual events follow:
 - Hits for network plumbing are dropped by the backend: names ending in `.arpa` or `.local`, and names without a dot. Guard-list lookups are the exception (`_dns.resolver.arpa` arrives as a hidden-traffic attempt).
 - kb lookup detail: `kb_overrides.json` is searched first, all the way up the name. An override wins over `kb.json` for its own name and everything under it; among overrides the most specific wins (`ca.iadsdk.apple.com` beats `apple.com`).
 - `device.name` is never `null`. A new phone is "Device 1", "Device 2", … until it is renamed with `POST /api/devices/{id}` or the sensor sends its name (`--names`). Numbering starts over after a wipe.
+- A device whose `device_id` is a loopback address (`127.0.0.1`, `::1`) is the box asking its own sensor (the self-test in the start checklist), not a phone. It is named `box self-test` and takes no device number. Leave it out of device lists and counts.
+- `blocked` (also inside `snapshot`, and as the answer of block and unblock) carries `"covers"`: for each blocked company, the list of names the block covers, e.g. `{"Example Ads": ["example-ads.com", "exads.net"]}`. Every name also covers everything under it. An empty list means no domain of that company is known, so nothing is blocked. A blocked domain covers itself and its subdomains only.
 - `hit.ts` is on the backend's clock, the same clock as `session.started`. The sensor runs on another machine, so the backend shifts each batch to make its newest event "now"; the spacing inside a batch is kept.
 
 ### Frontend → backend: REST

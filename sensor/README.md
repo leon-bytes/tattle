@@ -40,7 +40,8 @@ dig @127.0.0.1 -p 5300 +tcp example.com    # same over TCP
 | `--upstream` | `UPSTREAM_DNS` | `9.9.9.9` | resolver to forward to, `host` or `host:port`; 3 s timeout, then SERVFAIL |
 | `--backend` | `BACKEND_URL` | `http://127.0.0.1:8000` | where events go and the blocklist comes from |
 | `--names` | | off | send each phone's DHCP hostname as `client_name`. Off: phones are reported by address only |
-| `--leases` | `LEASES_FILE` | `/var/lib/NetworkManager/dnsmasq-tattle0.leases` | where `--names` reads hostnames from; unreadable or missing means no names |
+| `--leases` | `LEASES_FILE` | `/var/lib/NetworkManager/dnsmasq-tattle0.leases` | where `--names` reads hostnames from; unreadable or missing means no names. The file is named after the interface the hotspot runs on, which is not always `tattle0`: `box-up.sh` prints the right path |
+| `--max-ttl` | `SENSOR_MAX_TTL` | `10` | cut the lifetime (TTL) of every relayed answer to this many seconds; `0` leaves answers as they are |
 | `--debug` | | off | print one line per query. Development only |
 | `--record FILE` | | off | append events to a JSONL replay. Only with our own phones, only on purpose |
 
@@ -49,6 +50,7 @@ If `9.9.9.9` is unreachable from your network (some networks only allow their ow
 ## Behaviour worth knowing
 
 - **Guard list** (always NXDOMAIN, suffix match): the list at the top of `tattle_sensor.py`. These are the phone's ways around us (encrypted DNS, iCloud Private Relay); the backend counts them as "hidden-traffic attempts".
+- **Short answer lifetimes.** A phone reuses a DNS answer until its lifetime (TTL) runs out, and only a new lookup can be blocked. So the sensor cuts every answer's lifetime to 10 s (`--max-ttl`): phones ask again within seconds, and a block or unblock takes hold at the app's next connection. Nothing else in the answer is changed. A connection that is already open is not affected by a block; that needs the app to reconnect.
 - **Names are untrusted.** A phone can look up anything, and DNS allows any bytes in a name. The sensor resolves and reports plain host names only (letters, digits, `-`, `_`, dots; 253 characters at most). Anything else is answered `REFUSED`, never forwarded, never printed, and counted; the count reaches the backend as `malformed`.
 - **Backend down:** lookups keep working with the last blocklist. Up to 5000 events wait in memory, oldest dropped first, and are delivered when the backend is back.
 - **Privacy:** query names are never printed or written unless `--debug` or `--record` is given. Normal output is two start lines and "backend connected / unreachable".

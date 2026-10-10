@@ -27,7 +27,7 @@ def test_snapshot_then_live_hits(client):
         snapshot = ws.receive_json()
         assert snapshot["type"] == "snapshot"
         assert (snapshot["devices"], snapshot["hits"], snapshot["session"]) == ([], [], None)
-        assert snapshot["blocked"] == {"companies": [], "domains": []}
+        assert snapshot["blocked"] == {"companies": [], "domains": [], "covers": {}}
         assert snapshot["health"] == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0}
 
         assert post_events(client, event("googleads.g.doubleclick.net", 1000.0),
@@ -65,14 +65,19 @@ def test_block_and_unblock(client):
         before = client.get("/api/blocklist").json()
         assert before["domains"] == []
         assert client.post("/api/block", json={"company": "AppLovin"}).status_code == 200
-        assert until(ws, "blocked") == {"type": "blocked", "companies": ["AppLovin"], "domains": []}
+        blocked = client.post("/api/block", json={"company": "Nobody Knows"}).json()
+        assert blocked["covers"] == {"AppLovin": ["applovin.com", "applvn.com"], "Nobody Knows": []}  # says what each block covers
+        client.post("/api/unblock", json={"company": "Nobody Knows"})
+        assert until(ws, "blocked") == {"type": "blocked", "companies": ["AppLovin"], "domains": [],
+                                        "covers": {"AppLovin": ["applovin.com", "applvn.com"]}}
+        until(ws, "blocked"), until(ws, "blocked")  # the block and unblock of "Nobody Knows"
         client.post("/api/block", json={"domain": "odd.example.io"})
         assert until(ws, "blocked")["domains"] == ["odd.example.io"]
         blocklist = client.get("/api/blocklist").json()
         assert blocklist["domains"] == ["applovin.com", "applvn.com", "odd.example.io"]
         assert blocklist["version"] > before["version"]
         client.post("/api/unblock", json={"company": "AppLovin"})
-        assert until(ws, "blocked") == {"type": "blocked", "companies": [], "domains": ["odd.example.io"]}
+        assert until(ws, "blocked") == {"type": "blocked", "companies": [], "domains": ["odd.example.io"], "covers": {}}
         assert client.get("/api/blocklist").json()["domains"] == ["odd.example.io"]
     assert client.post("/api/block", json={}).status_code == 422
 
@@ -88,6 +93,15 @@ def test_devices_are_numbered_unless_the_sensor_sends_names(client):
         client.post("/api/wipe")
         post_events(client, event("apple.com", client_ip="10.42.0.30", client_name=None))
         assert until(ws, "device")["name"] == "Device 1"  # numbering starts over after a wipe
+
+
+def test_the_box_testing_itself_is_not_a_phone(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        post_events(client, event("example.com", client_ip="127.0.0.1", client_name=None))  # the checklist's self-test lookup
+        assert until(ws, "device") == {"type": "device", "device_id": "127.0.0.1", "name": "box self-test", "persist": False}
+        post_events(client, event("apple.com", client_name=None))
+        assert until(ws, "device")["name"] == "Device 1"  # the first real phone is still number one
 
 
 def test_device_rename_and_persist(client):
@@ -135,7 +149,7 @@ def test_wipe(client):
         client.post("/api/session/start", json={"device_id": PHONE, "label": "Demo Game"})
         assert client.post("/api/wipe").json() == {"type": "wiped"}
         assert until(ws, "wiped") == {"type": "wiped"}
-        assert until(ws, "blocked") == {"type": "blocked", "companies": [], "domains": []}
+        assert until(ws, "blocked") == {"type": "blocked", "companies": [], "domains": [], "covers": {}}
         assert until(ws, "session") == {"type": "session", "session": None}
     state = client.get("/api/state").json()
     assert (state["devices"], state["hits"], state["session"], state["summary"]) == ([], [], None, None)
