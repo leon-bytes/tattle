@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One command to start the VM side of the demo: the backend on port 8000, reachable from the host.
-# It serves the built frontend at / if frontend/dist exists; /debug and /present are there either way.
+# It serves the show screen (the plain files in frontend/, no build step) at /, the operator console at
+# /debug and the fallback view at /present. Files are read at each request: after an edit, reload the page.
 #
 # Usage, from anywhere:  bash backend/start.sh        Stop with Ctrl+C (that also forgets everything captured).
 
@@ -21,7 +22,7 @@ if [ -f .env ]; then                                # optional settings (databas
   done < .env
 fi
 
-if [ -d frontend/dist ]; then page="the frontend build"; else page="the debug page (no frontend/dist yet)"; fi
+if [ -f frontend/index.html ]; then page="the show screen (frontend/)"; else page="the debug page (frontend/index.html is missing)"; fi
 echo "Tattle backend starting. / shows $page."
 for address in $(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1); do
   echo "  http://$address:8000/   also /debug and /present"   # one line per address of this machine

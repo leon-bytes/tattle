@@ -1,5 +1,7 @@
 # Frontend quickstart
 
+**Saturday afternoon: the frontend moved to BOX, and it exists.** It is the show screen in `frontend/` (plain HTML, CSS and JavaScript, no build step), served by the backend at `/`; its own notes are in [frontend/README.md](../frontend/README.md). This page stays as the worked reference for every message that screen uses, and as the starting point for anyone who builds another view.
+
 Everything you need to build against the backend without the hotspot: three commands to get a live stream of replayed phone traffic, then one real example of every message. The contract itself is in [TEAM.md](TEAM.md); this page shows it running.
 
 ## 1. Run it (5 minutes)
@@ -32,19 +34,19 @@ python3 tools/fake_sensor.py data/replays/demo-synthetic.jsonl --loop        # W
 - `--speed 4` plays it four times faster.
 - Blocking works in replay: block a company and its next lookups arrive as blocked.
 
-If your UI is not ready at demo time, the backend has a plain fallback at `/present`. It is insurance, not a replacement.
+If the show screen ever fails at demo time, the backend has a plain fallback at `/present`. It is insurance, not a replacement.
 
-Check it: open <http://127.0.0.1:8000/debug>. Rows should scroll in. That page uses only the API below, so its source (`backend/app/debug.html`, one file, about 200 lines) is a working example of nearly everything here.
+Check it: open <http://127.0.0.1:8000/>. Bubbles appear around the phone; press `S`, type an app name and Enter to start a session. <http://127.0.0.1:8000/debug> is the operator console: rows should scroll in. Both use only the API below, so their sources (`frontend/app.js`, about 400 lines, and `backend/app/debug.html`, one file, about 200 lines) are working examples of nearly everything here.
 
-## 2. Connect from Vite
+## 2. Where the page lives
 
-The backend listens on port 8000. In `vite.config.js`, proxy both the REST calls and the WebSocket:
+The show screen is three plain files in `frontend/` (`index.html`, `app.css`, `app.js`) plus `assets/`. The backend serves them at `/` and reads them at each request: edit, reload, done. There is no dev server, no proxy, no build, and nothing is loaded from the internet. In the page, ``new WebSocket(`ws://${location.host}/ws`)`` and `fetch("/api/…")` just work, because the page and the API come from the same place.
+
+If you build another view with a dev server (Vite or similar), proxy both the REST calls and the WebSocket to port 8000:
 
 ```js
 server: { proxy: { "/api": "http://127.0.0.1:8000", "/ws": { target: "ws://127.0.0.1:8000", ws: true } } }
 ```
-
-Then ``new WebSocket(`ws://${location.host}/ws`)`` and `fetch("/api/…")` work in dev and in the built app, which the backend serves from `frontend/dist`.
 
 ## 3. WebSocket `/ws`: what arrives
 
@@ -57,13 +59,14 @@ All examples below are real, captured from one run of the replay.
 ```json
 {"type": "snapshot",
  "devices": [{"device_id": "10.42.0.23", "name": "Test iPhone A", "persist": true}, {"device_id": "10.42.0.31", "name": "Device 2", "persist": false}],
- "hits": [{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791663810.585},
-          {"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791663810.596},
-          … 191 more hits …],
+ "hits": [{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791667984.881},
+          {"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791667984.893},
+          … 189 more hits …],
  "blocked": {"companies": [], "domains": ["tracker.example.com"], "covers": {}},
  "session": null,
+ "last_session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791667984.7504432, "stopped": 1791668013.7402787},
  "summary": {"type": "summary", "device_id": "10.42.0.23", "text": "While Demo Game was open for 28 seconds, this phone contacted mostly advertising companies, led by Google, Apple, AppLovin.", "by": "demo-model"},
- "health": {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791663839.359977, "kb": 4486, "malformed": 1, "ai_endpoint": null}}
+ "health": {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791668013.7374587, "kb": 4486, "malformed": 1, "ai_endpoint": null}}
 ```
 
 **`device`**: a phone appeared, or its name or `persist` flag changed
@@ -78,11 +81,11 @@ Live phones are "Device 1", "Device 2", … until someone renames them. The repl
 **`hit`**: one lookup. This is the stream that feeds the bubbles.
 
 ```json
-{"type": "hit", "device_id": "10.42.0.23", "domain": "graph.facebook.com", "company": "Meta", "category": "social", "source": "list", "blocked": false, "block_reason": null, "ts": 1791663811.498}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791663810.585}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "api.puzzle-garden-game.example", "company": null, "category": "unknown", "source": "unknown", "blocked": false, "block_reason": null, "ts": 1791663811.415}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "ms.applovin.com", "company": "AppLovin", "category": "advertising", "source": "list", "blocked": true, "block_reason": "user", "ts": 1791663825.233}
-{"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791663810.596}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "graph.facebook.com", "company": "Meta", "category": "social", "source": "list", "blocked": false, "block_reason": null, "ts": 1791667985.796}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "captive.apple.com", "company": "Apple", "category": "vendor", "source": "override", "blocked": false, "block_reason": null, "ts": 1791667984.881}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "api.puzzle-garden-game.example", "company": null, "category": "unknown", "source": "unknown", "blocked": false, "block_reason": null, "ts": 1791667985.714}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "ms.applovin.com", "company": "AppLovin", "category": "advertising", "source": "list", "blocked": true, "block_reason": "user", "ts": 1791667999.555}
+{"type": "hit", "device_id": "10.42.0.23", "domain": "_dns.resolver.arpa", "company": null, "category": "unknown", "source": "unknown", "blocked": true, "block_reason": "guard", "ts": 1791667984.893}
 ```
 
 - `category`: `advertising`, `analytics`, `social`, `fingerprinting`, `content`, `vendor`, `unknown`. `company` is `null` when unknown.
@@ -113,14 +116,14 @@ Live phones are "Device 1", "Device 2", … until someone renames them. The repl
 **`session`**: a session started, or stopped (`null`)
 
 ```json
-{"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791663810.4720042}}
+{"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791667984.7504432}}
 {"type": "session", "session": null}
 ```
 
 **`health`**: every 5 s, and at once when something changes
 
 ```json
-{"type": "health", "db": true, "db_error": null, "ai": false, "sensor_seen": 1791663810.7747395, "kb": 4486, "malformed": 0, "ai_endpoint": null}
+{"type": "health", "db": true, "db_error": null, "ai": false, "sensor_seen": 1791667985.0715606, "kb": 4486, "malformed": 0, "ai_endpoint": null}
 ```
 
 - `sensor_seen` is the time the sensor last called in (seconds since 1970, backend clock). Older than about 10 s means the sensor is gone.
@@ -155,7 +158,7 @@ POST /api/devices/10.42.0.23  {"name": "Test iPhone A", "persist": true}
 → 200  {"type": "device", "device_id": "10.42.0.23", "name": "Test iPhone A", "persist": true}
 
 POST /api/session/start  {"device_id": "10.42.0.23", "label": "Demo Game"}
-→ 200  {"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791663810.4720042}}
+→ 200  {"type": "session", "session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791667984.7504432}}
 
 POST /api/session/stop
 → 200  {"type": "session", "session": null}
@@ -164,7 +167,7 @@ POST /api/wipe
 → 200  {"type": "wiped"}
 
 GET /api/health
-→ 200  {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791663839.359977, "kb": 4486, "malformed": 1, "ai_endpoint": null}
+→ 200  {"db": true, "db_error": null, "ai": true, "sensor_seen": 1791668013.7374587, "kb": 4486, "malformed": 1, "ai_endpoint": null}
 
 GET /api/state
 → 200  the snapshot above
@@ -178,14 +181,14 @@ GET /api/label-check?app=<name> the same session against another label
 ```
 
 ```json
-{"session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791663810.4720042, "stopped": null},
+{"session": {"device_id": "10.42.0.23", "label": "Demo Game", "started": 1791667984.7504432, "stopped": null},
  "label": {"app": "Demo Game", "source_url": "https://apps.apple.com/app/id0000000000", "checked": "2026-10-10", "data_used_to_track_you": [], "data_linked_to_you": ["Identifiers", "Usage Data"], "data_not_linked_to_you": ["Diagnostics"], "data_not_collected": false},
- "observed": {"seconds": 28, "lookups": 184, "blocked": 13, "hidden_attempts": 8,
-              "by_category": {"advertising": 110, "vendor": 38, "analytics": 20, "content": 10, "social": 6}, "companies": [{"company": "Google", "category": "advertising", "hits": 38}, {"company": "Apple", "category": "vendor", "hits": 30}, {"company": "AppLovin", "category": "advertising", "hits": 26}, {"company": "Unity", "category": "advertising", "hits": 18}, … 10 more …], "advertising_companies": 11, "tracking_companies": 12},
+ "observed": {"seconds": 28, "lookups": 182, "blocked": 12, "hidden_attempts": 8,
+              "by_category": {"advertising": 108, "vendor": 38, "analytics": 20, "content": 10, "social": 6}, "companies": [{"company": "Google", "category": "advertising", "hits": 38}, {"company": "Apple", "category": "vendor", "hits": 30}, {"company": "AppLovin", "category": "advertising", "hits": 24}, {"company": "Unity", "category": "advertising", "hits": 18}, … 10 more …], "advertising_companies": 11, "tracking_companies": 12},
  "level": "mismatch",
  "verdict": "Demo Game's label lists nothing under \"Data Used to Track You\", yet in 27 seconds it contacted advertising companies such as Google.",
  "verdict_by": "demo-model",
- "rule_verdict": "The label lists nothing under \"Data Used to Track You\", but this session contacted 11 advertising companies.",
+ "rule_verdict": "The label lists nothing under \"Data Used to Track You\", but this session contacted advertising servers of 11 companies.",
  "note": "Tattle sees which servers a phone looks up, not what is sent to them."}
 ```
 
@@ -198,10 +201,10 @@ GET /api/label-check?app=<name> the same session against another label
 
 ```
 GET /api/history/sessions
-→ 200  {"sessions": [{"id": "b39bbb43-ca7d-4fc7-a362-76b3668ea9d5", "device_id": "10.42.0.23", "device_name": "Test iPhone A", "label": "Demo Game", "started": 1791663810.472004, "stopped": 1791663839.363948, "hits": 184, "blocked": 13, "hidden_attempts": 8, "companies": 14, "top_companies": [["Google", 38], ["Apple", 30], ["AppLovin", 26], ["Unity", 18], ["Meta", 12]]}]}
+→ 200  {"sessions": [{"id": "a0c0a87d-e10e-41b8-ae52-dd71e1d85e2a", "device_id": "10.42.0.23", "device_name": "Test iPhone A", "label": "Demo Game", "started": 1791667984.750443, "stopped": 1791668013.740279, "hits": 182, "blocked": 12, "hidden_attempts": 8, "companies": 14, "top_companies": [["Google", 38], ["Apple", 30], ["AppLovin", 24], ["Unity", 18], ["Meta", 12]]}]}
 
 GET /api/history/top-companies?limit=3
-→ 200  {"labels": [{"label": "Demo Game", "sessions": 1, "hits": 184, "hidden_attempts": 8, "top_companies": [{"company": "Google", "category": "advertising", "hits": 38, "blocked": 0, "sessions": 1}, {"company": "Apple", "category": "vendor", "hits": 30, "blocked": 0, "sessions": 1}, {"company": "AppLovin", "category": "advertising", "hits": 26, "blocked": 13, "sessions": 1}]}]}
+→ 200  {"labels": [{"label": "Demo Game", "sessions": 1, "hits": 182, "hidden_attempts": 8, "top_companies": [{"company": "Google", "category": "advertising", "hits": 38, "blocked": 0, "sessions": 1}, {"company": "Apple", "category": "vendor", "hits": 30, "blocked": 0, "sessions": 1}, {"company": "AppLovin", "category": "advertising", "hits": 24, "blocked": 12, "sessions": 1}]}]}
 
 POST /api/history/clear
 → 200  {"cleared": true}
@@ -215,16 +218,16 @@ POST /api/history/clear
 - **Names on screen:** always use `device.name`. It is never empty.
 - **A block stops new connections, not open ones.** After a block, an app can keep talking over a connection it already has; blocked lookups only start arriving when it reconnects (phones re-ask within about 10 s). Say so next to the block button, for example "close and reopen the app". Offer blocking by company: one app uses several names.
 - **Times:** `ts`, `started`, `stopped` and `sensor_seen` are seconds since 1970 on the backend's clock, as floats. Multiply by 1000 for `new Date()`.
-- **Sessions and hits:** a hit belongs to the session when `hit.device_id === session.device_id` and `hit.ts >= session.started`.
+- **Sessions and hits:** a hit belongs to the session when `hit.device_id === session.device_id` and `hit.ts >= session.started`. After a stop the `session` message is `null`; `last_session` in the snapshot (and in `GET /api/state`) carries the same session with `stopped`, and its hits are those with `ts <= stopped`.
 - **Nothing here needs a login**, and nothing is stored unless a phone is marked `persist`.
 - **Privacy banner**, always visible: "Reads server names only, never content. Nothing is kept after you leave."
 
-## 6. Security notes for FRONT
+## 6. Security notes for the frontend
 
 We are a security team and judges may poke at the screen. The one rule: **everything from the API goes onto the page as text, never as HTML.**
 
 - **Why:** a phone chooses the names it looks up, and someone will try `<img src=x onerror=alert(1)>.example.com`. The sensor and the backend refuse names that are not plain host names (they are counted in `health.malformed` and never reach you), but that is the first line of defence, not the only one. Company names and summaries can come from a model; device names and session labels are typed by people and are passed on as typed.
-- **In React:** `{hit.domain}` in JSX is safe, it is always text. Never use `dangerouslySetInnerHTML`, `innerHTML`, `outerHTML` or `insertAdjacentHTML` with anything from the API. Outside React, use `textContent`.
+- **In our page:** `textContent` and `createElement` only. Never `innerHTML`, `outerHTML` or `insertAdjacentHTML` with anything from the API. In a framework such as React, `{hit.domain}` in JSX is safe (it is always text); `dangerouslySetInnerHTML` is not.
 - **Not in attributes that run or load:** don't build `href`, `src` or `style` strings from API values. A link to `"https://" + domain` would send a judge's click to a tracker.
 - **This applies to:** `hit.domain`, `hit.company`, `device.name`, `session.label`, `summary.text`, `verdict`, `rule_verdict`, `db_error`, and everything in the history and label answers.
 - **What the backend refuses.** Real answers from this run:
@@ -239,6 +242,6 @@ POST /api/wipe   (sent by a page on another site)
 
 - **Other sites:** every `POST` and the WebSocket are refused (`403`) when the page making the request was loaded from another site. Pages served by the backend, or by a dev server on `localhost`, are fine. If you open the Vite dev server through a LAN address instead of `localhost`, leave the proxy's `changeOrigin` at its default (off).
 - **Limits you might hit:** 1 MB per request, device name 64 characters, session label and company 100, 500 blocks, 50 WebSocket connections. Over the limit is a `422` (or `413` for size).
-- **How we check our own pages:** `/debug` and `/present` insert text only, a test fails if either uses an HTML-building call, and both are served with a content security policy that runs nothing but their own script. Feel free to copy that.
+- **How we check our own pages:** the show screen, `/debug` and `/present` insert text only, and a test fails if any of them uses an HTML-building call or `setAttribute`. All three are served with a content security policy: the two single-file pages run nothing but their own script, and the show screen may load only files from the backend itself (no inline script or style, nothing from the internet).
 
 The `classified` message, the second `summary` and the history examples came from a run with a stand-in AI module and a local Postgres. Without them the shapes are the same; those messages just never arrive.

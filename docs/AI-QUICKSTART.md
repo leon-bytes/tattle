@@ -84,6 +84,8 @@ RESULT: the backend can use this module
 
 Then see it live: start the backend and the replay ([FRONT-QUICKSTART.md](FRONT-QUICKSTART.md), section 1) and open <http://127.0.0.1:8000/debug>. The `puzzle-garden-game.example` hosts in the replay are unknown to every list on purpose: they are your test names. The `ai` pill turns green after the first good call.
 
+On the show screen (<http://127.0.0.1:8000/>, the page the judges see; BOX owns it now) your work appears in four places: a company you classified gets a bubble with a dotted outline and the tag "AI guess"; the card "In plain words" shows your summary with "written by <model>"; the card "App Store privacy label" shows your `label_check` sentence with the rule-based one below it; and "AI: on" is green, top right, while the model server answers or your last call worked.
+
 ## 4. Caching
 
 - **Database.** If Postgres is configured, the backend stores answers in `ai_cache` and loads them at startup. Only names that one of our own marked phones looked up are stored. You don't have to do anything.

@@ -29,7 +29,7 @@ from .summary import session_stats
 from .validate import is_hostname, is_ip, plain
 
 ROOT = Path(__file__).resolve().parents[2]
-DIST = ROOT / "frontend" / "dist"
+FRONTEND = ROOT / "frontend"  # the show screen: plain files, no build step
 
 SUMMARY_SECONDS = 3   # live template summary refresh while a session runs
 HEALTH_SECONDS = 5    # periodic health broadcast
@@ -449,6 +449,11 @@ async def ws(websocket: WebSocket) -> None:
 
 # --- pages ---
 
+def sockets(host: str) -> str:
+    """The WebSocket addresses of this backend, for a policy's connect-src. Some browsers do not count ws:// as 'self'."""
+    return f" ws://{host} wss://{host}" if re.fullmatch(r"[A-Za-z0-9.:\[\]-]+", host) else ""
+
+
 def page(name: str, request: Request) -> HTMLResponse:
     """One of our own single-file pages, under a policy that runs only the page's own script and style
     and lets it talk only to this backend. If a name from the network ever slipped in as markup, it
@@ -456,11 +461,25 @@ def page(name: str, request: Request) -> HTMLResponse:
     nonce = secrets.token_urlsafe(16)
     html = Path(__file__).with_name(name).read_text(encoding="utf-8")
     html = html.replace("<script>", f'<script nonce="{nonce}">').replace("<style>", f'<style nonce="{nonce}">')
-    host = request.headers.get("host", "")
-    sockets = f" ws://{host} wss://{host}" if re.fullmatch(r"[A-Za-z0-9.:\[\]-]+", host) else ""
     policy = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
-              f"connect-src 'self'{sockets}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+              f"connect-src 'self'{sockets(request.headers.get('host', ''))}; "
+              "base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
     return HTMLResponse(html, headers={"Content-Security-Policy": policy, "Cache-Control": "no-store"})
+
+
+class Frontend(StaticFiles):
+    """The show screen's files, read from frontend/ at each request. The policy allows only files from
+    this backend (script, style, font, image; nothing inline, nothing from the internet) and
+    "no-cache" makes the browser ask every time, so a reload always shows the latest edit."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        host = dict(scope["headers"]).get(b"host", b"").decode("latin-1")
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
+            f"connect-src 'self'{sockets(host)}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 @app.get("/debug")
@@ -474,9 +493,9 @@ async def present_page(request: Request) -> HTMLResponse:
     return page("present.html", request)
 
 
-if DIST.is_dir():
-    app.mount("/", StaticFiles(directory=DIST, html=True), name="frontend")
+if (FRONTEND / "index.html").is_file():
+    app.mount("/", Frontend(directory=FRONTEND, html=True), name="frontend")  # last, so every route above wins
 else:
     @app.get("/")
-    async def no_frontend_yet() -> RedirectResponse:
+    async def no_frontend() -> RedirectResponse:
         return RedirectResponse("/debug")

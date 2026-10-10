@@ -7,7 +7,7 @@
 | Where | What | Needs |
 | --- | --- | --- |
 | Host laptop | hotspot (`box-up.sh`) and the sensor | NetworkManager, `iw`, `iptables`, `python3`, a venv with `dnslib` |
-| VM on the same laptop | backend (and the frontend it serves) | the whole repo; see `backend/README.md` there |
+| VM on the same laptop | backend (and the show screen it serves at `/`) | the whole repo; see `backend/README.md` there |
 
 **The host only needs two folders: `sensor/` and `box/`.** Copy them anywhere, side by side. No checkout, no git, nothing else from the repo. All host commands below are run from the folder that holds the two.
 

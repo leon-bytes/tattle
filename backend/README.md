@@ -32,7 +32,7 @@ python3 tools/fake_sensor.py data/replays/demo-synthetic.jsonl --loop
 - `--speed 4`: four times faster. Optional. At high speeds (10 and up) some repeated lookups merge, because the backend counts the same name within 2 s once.
 - Blocking from the UI works in replay mode: the fake sensor reads the blocklist and sends matching names as blocked.
 
-Open <http://127.0.0.1:8000/debug> for the live event stream, with block, session, rename, persist and wipe buttons. Until `frontend/dist` exists, `/` redirects there.
+Open <http://127.0.0.1:8000/> for the show screen (the plain files in `frontend/`; its keys are in `frontend/README.md`), and <http://127.0.0.1:8000/debug> for the operator console: the live event stream, with block, session, rename, persist and wipe buttons.
 
 The start-up line says what was loaded, for example `kb has 4467 domains, 0 seeded AI answers, ai module absent, database not configured`. If `data/kb.json` is missing the backend still runs and every name shows as `unknown`; rebuild it with `python3 tools/build_kb.py`.
 
@@ -48,8 +48,8 @@ bash backend/start.sh
 
 It loads `.env` if there is one (as plain `KEY=value` lines; unfilled `<placeholders>` are skipped), prints the addresses to open, and runs the same command as above with `--host 0.0.0.0`, so the host laptop can reach it. The order of the whole demo start is in `docs/RUNBOOK.md`.
 
-- `/` is the frontend build if `frontend/dist` exists, otherwise the debug page.
-- `/present` is a plain presenter view (companies as coloured blocks, a counter, the summary, the privacy banner). It is insurance in case the real frontend is not ready; controls stay on `/debug`.
+- `/` is the show screen: the files in `frontend/`, read at each request (no build step, reload after an edit). Without `frontend/index.html`, `/` redirects to the debug page.
+- `/present` is a plain presenter view (companies as coloured blocks, a counter, the summary, the privacy banner). It is insurance in case the show screen fails; controls stay on `/debug`.
 
 - The host reaches the VM at its `192.168.122.x` address (`ip -4 -brief addr` shows it). The sensor on the host gets `--backend http://<vm-ip>:8000`, and the browser opens `http://<vm-ip>:8000/`.
 - The VM's firewall already allows port 8000 on that interface.

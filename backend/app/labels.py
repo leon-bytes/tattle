@@ -64,7 +64,10 @@ def companies(count: int, kind: str) -> str:
 
 def verdict(label: dict, seen: dict) -> tuple[str, str]:
     """("mismatch" or "consistent", one sentence)."""
-    ads = companies(seen["advertising_companies"], "advertising")
+    # "advertising servers of N companies": N counts every company with an advertising lookup, also one
+    # that was mostly contacted for something else. The screen's "advertising" counter counts the latter kind once.
+    count = seen["advertising_companies"]
+    ads = f"advertising servers of {count} compan" + ("y" if count == 1 else "ies")
     trackers = companies(seen["tracking_companies"], "tracking")
     declared = [str(item) for item in label.get("data_used_to_track_you") or []]
     if label.get("data_not_collected"):

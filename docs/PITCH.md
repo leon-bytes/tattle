@@ -24,9 +24,9 @@ The box is one laptop running two things: the hotspot and the sensor on the lapt
   - Low Power Mode off
   - charged
 - The iPhone shows "Private Relay is turned off for this network": expected, tap "use without Private Relay".
-- Hit Wipe, so the screen starts empty. The phone then shows as "Device 1".
-- For the history view: mark our phone as `persist` after the Wipe and before starting the session. Never a judge's phone.
-- Health shows sensor ✓. AI and DB may be ✗; the demo still works.
+- Press `W` twice on the show screen (wipe), so it starts empty. The phone then shows as "Device 1" under the phone in the middle.
+- For the history view: mark our phone as `persist` (on `/debug`, in a second tab) after the wipe and before starting the session. Never a judge's phone.
+- Top right of the show screen: "live" and "sensor: live" are green. "AI: off" is fine; the demo still works without the model and without the database.
 - Backup: the replay ready to start in the VM (`python3 tools/fake_sensor.py data/replays/<file>.jsonl --loop`), backup video on the second laptop (and on a phone).
 
 ## Script (~3:30)
@@ -39,7 +39,7 @@ The box is one laptop running two things: the hotspot and the sensor on the lapt
 
 **0:20 the judge acts (A)**
 Hand over the iPhone: "Open <demo app> and just use it like normal."
-- Start the session labeled with the app name.
+- Start the session labeled with the app name: press `S`, type the name, Enter. The name appears under the phone and the seconds start counting.
 
 **0:25–1:30 the screen fills (B narrates)**
 - Point at the first bubbles: "That's an ad exchange… that's analytics… that's a data broker."
@@ -47,16 +47,17 @@ Hand over the iPhone: "Open <demo app> and just use it like normal."
 - Read the plain-English summary aloud.
 
 **1:30 block it (judge or B)**
-"Tap that company to block it. Now close the app and open it again."
+"Click that company to block it. Now close the app and open it again."
+- A click on the bubble blocks the company; the bar at the bottom says what was blocked and offers Undo. A second click unblocks.
 - A block stops **new** connections. What the app already has open stays open until it reconnects, so the reopen is part of the demo, not a workaround.
 - After reopening: the bubble goes grey, and the blocked counter keeps climbing: the app keeps trying.
 - The app still works.
 - Block the company, not a single name: one app uses several names of the same company.
 
-**1:50 label check (B; only if built)**
+**1:50 label check (B; the card appears on the right when `data/labels/` has a label for the app name typed at the start)**
 "Here's what the App Store label says this app collects. Here's what it actually contacted. You decide."
 
-**2:10 how it works (C, with the diagram on screen)**
+**2:10 how it works (C, with the diagram on screen: press `H`, `Esc` closes it)**
 - The phone's Wi-Fi goes through our box. The box answers its DNS lookups, so we see every name before a connection starts.
 - A tracker list puts known names into categories, and an open-source model on an AMD GPU sorts the names no list has ever seen.
 - Blocking means we answer "that name doesn't exist".

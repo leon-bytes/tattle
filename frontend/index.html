@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tattle</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="offline">
+
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="word">Tattle</span>
+    <span class="tagline">who is your phone talking to?</span>
+  </div>
+  <div class="status">
+    <span class="chip" id="chip-link">connecting…</span>
+    <span class="chip" id="chip-sensor">sensor: waiting</span>
+    <span class="chip" id="chip-ai">AI: off</span>
+    <button class="ghost" id="open-how" type="button">How it works <kbd>H</kbd></button>
+    <button class="ghost" id="open-controls" type="button" title="Operator controls">Controls <kbd>C</kbd></button>
+  </div>
+</header>
+
+<main>
+  <section class="stage" aria-label="Companies this phone contacted">
+    <div class="field" id="stage">
+      <svg class="lines" id="lines" aria-hidden="true"></svg>
+      <div class="phone" id="phone">
+        <div class="handset" id="handset" aria-hidden="true"><span></span></div>
+        <div class="phone-name" id="phone-name"></div>
+        <div class="phone-app" id="phone-app"></div>
+        <div class="hint" id="hint"></div>
+      </div>
+      <div class="bubbles" id="bubbles"></div>
+    </div>
+    <ul class="legend" id="legend" aria-label="Legend"></ul>
+    <div class="toast" id="toast" role="status" hidden>
+      <span id="toast-text"></span>
+      <button type="button" id="toast-undo">Undo</button>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="counter hero">
+      <div class="num" id="n-companies">0</div>
+      <div class="cap">companies contacted</div>
+    </div>
+    <div class="counter-row">
+      <div class="counter">
+        <span class="tag advertising corner">AD</span>
+        <div class="num cat-advertising-ink" id="n-advertising">0</div>
+        <div class="cap">advertising</div>
+      </div>
+      <div class="counter">
+        <span class="tag analytics corner">AN</span>
+        <div class="num cat-analytics-ink" id="n-analytics">0</div>
+        <div class="cap">analytics</div>
+      </div>
+      <div class="counter">
+        <div class="num" id="n-seconds">–</div>
+        <div class="cap">seconds</div>
+      </div>
+    </div>
+    <div class="counter-row two">
+      <div class="counter">
+        <div class="num" id="n-blocked">0</div>
+        <div class="cap">blocked attempts</div>
+        <div class="sub">lookups we refused</div>
+      </div>
+      <div class="counter">
+        <div class="num" id="n-hidden">0</div>
+        <div class="cap">hidden-traffic attempts</div>
+        <div class="sub">Private Relay, encrypted DNS</div>
+      </div>
+    </div>
+
+    <section class="card" id="summary-card" hidden>
+      <h2>In plain words <span class="by" id="summary-by"></span></h2>
+      <p id="summary-text"></p>
+    </section>
+
+    <section class="card" id="label-card" hidden>
+      <h2>App Store privacy label <span class="by" id="label-app"></span></h2>
+      <div class="verdict" id="label-level"></div>
+      <p id="label-verdict"></p>
+      <p class="facts" id="label-facts"></p>
+      <ul class="claims" id="label-claims"></ul>
+    </section>
+
+    <section class="card feed" id="feed-card" hidden>
+      <h2>Live: what the phone asks for</h2>
+      <ul id="feed"></ul>
+    </section>
+  </aside>
+</main>
+
+<footer class="banner">
+  <span class="lock" aria-hidden="true"></span>
+  Reads server names only, never content. Nothing is kept after you leave.
+</footer>
+
+<div class="overlay" id="how" hidden>
+  <div class="sheet wide" role="dialog" aria-label="How it works">
+    <button class="close" type="button" data-close>Close <kbd>Esc</kbd></button>
+    <img src="assets/tattle-architecture.png" alt="Diagram: the phone asks for a server name; the hotspot's firewall sends the question to our sensor; the sensor answers it and reports the name to the backend; the backend puts a company name to it and updates this screen.">
+    <p class="caption">Every app has to ask "where is this server?" before it can connect. On our Wi-Fi, we are the one it asks. We see the name, never what is sent.</p>
+  </div>
+</div>
+
+<div class="overlay" id="controls" hidden>
+  <div class="sheet" role="dialog" aria-label="Operator controls">
+    <button class="close" type="button" data-close>Close <kbd>Esc</kbd></button>
+    <h2>Operator</h2>
+    <label>Phone <select id="ctl-device"></select></label>
+    <label>App name <input id="ctl-label" maxlength="100" placeholder="e.g. Reddit" autocomplete="off"></label>
+    <div class="row">
+      <button type="button" class="primary" id="ctl-start">Start session</button>
+      <button type="button" id="ctl-stop">Stop session</button>
+      <button type="button" class="danger" id="ctl-wipe">Wipe everything</button>
+    </div>
+    <p class="keys"><kbd>S</kbd> start or stop a session &nbsp; <kbd>W</kbd> <kbd>W</kbd> wipe &nbsp; <kbd>H</kbd> how it works &nbsp; <kbd>C</kbd> this panel &nbsp; <kbd>F</kbd> full screen</p>
+    <p class="keys">Click a company to block it; click again to unblock. More controls: <a href="/debug">/debug</a></p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

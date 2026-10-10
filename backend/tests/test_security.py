@@ -20,13 +20,36 @@ def client(monkeypatch):
         yield client
 
 
+SINKS = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function",
+         "srcdoc", "javascript:", "setAttribute(")
+
+
 def test_pages_never_build_markup_from_data():
     for page in ("debug.html", "present.html"):
         source = (APP / page).read_text()
-        for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function",
-                     "srcdoc", "javascript:", "setAttribute("):
+        for sink in SINKS:
             assert sink not in source, f"{page} uses {sink}"
         assert "textContent" in source and " on" + "click=" not in source and " style=" not in source
+
+
+def test_show_screen_never_builds_markup_from_data():
+    script, markup = (main.FRONTEND / "app.js").read_text(), (main.FRONTEND / "index.html").read_text()
+    for sink in SINKS:
+        assert sink not in script and sink not in markup, f"the show screen uses {sink}"
+    assert "textContent" in script
+    # Nothing inline and nothing from another server: the policy would stop it, and the demo runs offline.
+    assert "<style" not in markup and " style=" not in markup and not re.search(r"\son\w+=", markup)
+    assert re.findall(r"<script[^>]*>", markup) == ['<script src="app.js">']
+    for source in (script, markup, (main.FRONTEND / "app.css").read_text()):
+        assert "http://" not in source.replace("http://www.w3.org/2000/svg", "") and "https://" not in source
+
+
+def test_show_screen_loads_only_from_this_backend(client):
+    for path in ("/", "/app.js", "/app.css"):
+        policy = client.get(path).headers["content-security-policy"]
+        assert "default-src 'none'" in policy and "script-src 'self'" in policy and "unsafe" not in policy
+        assert "connect-src 'self' ws://testserver wss://testserver;" in policy and "frame-ancestors 'self'" in policy
+    assert "ws://" not in client.get("/", headers={"Host": "bad host\"; script-src *"}).headers["content-security-policy"]
 
 
 def test_pages_run_only_their_own_script(client):

@@ -38,17 +38,17 @@ test iPhone --Wi-Fi--> THE BOX (Linux laptop)
                        |- backend (FastAPI :8000, in a VM on the laptop) -- kb.json lookup -- AI on the AMD server, through an SSH tunnel (optional) -- Postgres (provided)
                        |     | WebSocket /ws
                        |     v
-                       '- frontend (React, served by the backend) --> laptop screen
+                       '- frontend (a plain page, served by the backend at /) --> laptop screen
 ```
 
-**Where things run on the box:** the hotspot and the sensor run on the laptop itself. The backend, which also serves the built frontend, runs in a virtual machine on that laptop. The sensor reaches it over the laptop's internal VM network (`BACKEND_URL=http://<vm-ip>:8000`), and so does the browser. Phones on the hotspot cannot reach the backend.
+**Where things run on the box:** the hotspot and the sensor run on the laptop itself. The backend, which also serves the frontend, runs in a virtual machine on that laptop. The sensor reaches it over the laptop's internal VM network (`BACKEND_URL=http://<vm-ip>:8000`), and so does the browser. Phones on the hotspot cannot reach the backend.
 
 **Why we act as the resolver:** the hotspot's DHCP tells phones "ask this box for DNS", and a firewall rule also catches apps that try to use their own DNS server (like 8.8.8.8). Being the resolver makes capture and blocking the same job. To block a tracker, we answer "that name doesn't exist" (NXDOMAIN).
 
 ## Owners
 
-- **BOX**: hotspot, sensor, `box/` scripts, backend core (events, kb lookup, state, WebSocket, Postgres), privacy labels for the demo apps (`data/labels/`, moved from AI on Saturday afternoon).
-- **FRONT**: the React app. Live bubble graph, device panel, block buttons, session controls, How-it-works view.
+- **BOX**: hotspot, sensor, `box/` scripts, backend core (events, kb lookup, state, WebSocket, Postgres), privacy labels for the demo apps (`data/labels/`, moved from AI on Saturday afternoon), and the frontend (`frontend/`, moved from FRONT on Saturday afternoon).
+- **FRONT**: merged into BOX on Saturday afternoon. The frontend is the show screen in `frontend/`: the live bubble graph, counters, block by click, session controls, the How-it-works view. It is a plain page with no build step, not the React app first planned.
 - **AI**: the model server on the AMD server, `backend/app/ai.py`, `tools/build_kb.py` and `data/kb*.json`, visual identity (palette, type), pitch diagram.
 
 Each owner edits only their own folders. Shared files: this doc, `docs/PITCH.md`, `docs/CHALLENGES.md`, `.gitignore`, `README.md`.
@@ -131,6 +131,7 @@ The first message on connect is a full snapshot, then individual events follow:
 - `hit` also carries `"block_reason"`: `"user"`, `"guard"` or `null`.
 - **Guard-list lookups are "hidden-traffic attempts", not blocked trackers.** They arrive as hits with `blocked: true` and `block_reason: "guard"`: the phone tried encrypted DNS or Private Relay and we said no. Show and count them separately. Don't add them to "blocked attempts" or to a company's bubble (their `company` is whoever runs the relay, e.g. Apple, or `null`). The backend's own counts (`summary`, history, label check) already keep them apart.
 - `snapshot` also carries `"summary"`: the latest `summary` message, or `null`.
+- `snapshot` (and `GET /api/state`) also carries `"last_session"`: the session that just stopped, `{"device_id", "label", "started", "stopped"}`, or `null` while one runs, before the first one, and after a wipe. A page opened after the stop can still show that session. The `session` message itself is unchanged (`null` on stop).
 - `health` (and `snapshot.health`, `GET /api/health`) also carries `"kb"`: how many kb domains are loaded. `0` means `data/kb.json` is missing.
 - `health` also carries `"db_error"`: `null`, or one sentence saying why the database is not usable (unreachable, tables missing, no rights). `null` with `db: false` means no database is configured.
 - `health` also carries `"malformed"`: how many lookups were refused since the backend started because the name was not a plain host name. Worth showing: it is the phone (or someone) sending names that are not names.
@@ -248,9 +249,9 @@ GET /api/label-check?app=<name> the same, against another label
               "companies": [{"company": "Example Ads", "category": "advertising", "hits": 14}],
               "advertising_companies": 9, "tracking_companies": 12},
  "level": "mismatch",
- "verdict": "The label lists nothing under \"Data Used to Track You\", but this session contacted 9 advertising companies.",
+ "verdict": "The label lists nothing under \"Data Used to Track You\", but this session contacted advertising servers of 9 companies.",
  "verdict_by": "rules",
- "rule_verdict": "The label lists nothing under \"Data Used to Track You\", but this session contacted 9 advertising companies.",
+ "rule_verdict": "The label lists nothing under \"Data Used to Track You\", but this session contacted advertising servers of 9 companies.",
  "note": "Tattle sees which servers a phone looks up, not what is sent to them."}
 ```
 
@@ -259,6 +260,7 @@ GET /api/label-check?app=<name> the same, against another label
 - `rule_verdict` is always the rule-based sentence: the facts line. `verdict` is the sentence to show big: the AI's (`ai.label_check`), once there is one, otherwise the same rule-based sentence. `verdict_by` is `"rules"` or the model's name.
 - The endpoint never waits for the AI. The first call answers with the rules and asks the model in the background; a later call (poll every few seconds while the panel is open) carries the AI's sentence. The model is asked again only when new lookups arrived, and at most every 10 s.
 - `companies` holds up to 20, most contacted first, each with its most frequent category. `tracking_companies` counts companies with advertising, analytics, social or fingerprinting lookups.
+- The sentences say "advertising servers of N companies": N counts every company with at least one advertising lookup. The show screen's "advertising" counter counts companies *mostly* contacted for advertising, so it can be lower.
 - The rules: "no data collected" but tracking companies contacted is a mismatch; nothing under "Data Used to Track You" but advertising companies contacted is a mismatch; everything else is consistent. Always "contacted", never "sent".
 
 ### Postgres (provided): `backend/sql/schema.sql`
@@ -284,12 +286,13 @@ GET /api/label-check?app=<name> the same, against another label
 - Requests are limited: 1 MB per body, 2,000 events per batch, 500 blocks, 256 devices, 50 WebSocket clients.
 - Requests that change something (every `POST`), and WebSocket connections, are refused with `403` when they come from a page on another site. A page served by the backend itself, or by a dev server on the same machine (`localhost`), is fine. The API still has no login.
 - The backend's own pages (`/debug`, `/present`) are served with a content security policy that runs only their own script.
+- The show screen's files at `/` are served with a policy that allows only files from the backend itself (script, style, font, image; nothing inline, nothing from the internet), and with `Cache-Control: no-cache`, so a reload always shows the latest edit.
 
 ### Ports
 
 - sensor: UDP/TCP 5300 (not 5353: that's mDNS, often already taken on Linux)
-- backend: 8000, inside the VM on the box laptop (it also serves the built frontend)
-- Vite dev server: 5173, proxying `/api` and `/ws` to 8000
+- backend: 8000, inside the VM on the box laptop (it also serves the frontend at `/`)
+- no frontend dev server: the frontend is plain files read by the backend at each request
 
 Env vars are listed in `.env.example`.
 
@@ -308,10 +311,10 @@ docs/RUNBOOK.md           cold laptop to demo-ready in two minutes, and the swit
 docs/PROJECT-GUIDE.md     the whole project in one self-contained file, for pasting into an AI chat
 sensor/              DNS resolver that runs on the box (the laptop itself, not the VM)
 box/                 scripts to bring the hotspot up/down on the box (Linux + NetworkManager)
-backend/app/         FastAPI app (main, kb lookup, state, db, ai), plus two plain pages: /debug and /present
+backend/app/         FastAPI app (main, kb lookup, state, db, ai), plus two plain pages: /debug (operator console) and /present (fallback view)
 backend/start.sh     one command to start the backend for the demo
 backend/sql/         schema.sql
-frontend/            React + Vite app
+frontend/            the show screen served at /: index.html, app.css, app.js, assets/ (plain files, no build step)
 data/kb.json         tracker knowledge base (built by tools/build_kb.py)
 data/kb_overrides.json
 data/ai_cache_seed.json   optional precomputed AI answers
@@ -325,7 +328,7 @@ tools/               fake_sensor.py (replays events into the backend), build_kb.
 - Exact commands live in each folder's README. Owners keep them current.
 - **Dev (no hotspot needed):** run the backend, then `tools/fake_sensor.py` with a file from `data/replays/`. It feeds the backend exactly as a live phone would.
 - **Demo (on the box):** start the backend in the VM (`bash backend/start.sh`), then on the laptop itself `box/box-up.sh` and the sensor. The short order is in `docs/RUNBOOK.md`, the full checklist in `box/README.md`.
-- **If the real frontend is not ready:** the backend serves a plain presenter view at `/present` (companies as coloured blocks, a counter, the summary, the privacy banner) and the controls at `/debug`.
+- **The screens:** `/` is the show screen for the judges (`frontend/README.md` has its keys). `/debug` is the operator console. If the show screen ever fails, the backend serves a plain presenter view at `/present` (companies as coloured blocks, a counter, the summary, the privacy banner) and the controls at `/debug`.
 
 ## Scope
 

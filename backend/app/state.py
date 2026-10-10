@@ -280,4 +280,5 @@ class State:
     def snapshot(self) -> dict:
         return {"type": "snapshot", "devices": list(self.devices.values()), "hits": list(self.hits),
                 "blocked": self.blocked(),
-                "session": self.session, "summary": self.summary, "health": self.health}
+                "session": self.session, "last_session": self.last_session,
+                "summary": self.summary, "health": self.health}

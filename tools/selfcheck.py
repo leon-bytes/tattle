@@ -174,6 +174,10 @@ def main() -> None:
             rcode, answers = dns_query(args.sensor_port, "www.example.org")
             check(rcode == 0 and answers > 0, f"after unblocking it: www.example.org -> rcode {rcode}, {answers} answers")
 
+            with _http.open(base + "/", timeout=5) as response:
+                page = response.read().decode()
+            check("Reads server names only, never content." in page and 'src="app.js"' in page, "the show screen is served at /")
+
             post(base, "/api/wipe", {})
             check(any(m["type"] == "wiped" for m in collect(ws, 5, lambda m: m["type"] == "wiped")), "wipe is broadcast")
             with _http.open(base + "/api/state", timeout=5) as response:

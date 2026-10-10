@@ -130,8 +130,14 @@ def test_session_start_stop_gives_a_template_summary(client):
         summary = until(ws, "summary")
         assert summary["by"] == "template" and summary["device_id"] == PHONE
         assert summary["text"].endswith("Demo Game contacted 2 companies: 1 advertising (AppLovin), 1 analytics (Google).")
-    assert client.get("/api/state").json()["summary"] == summary
+    snapshot = client.get("/api/state").json()
+    assert snapshot["summary"] == summary and snapshot["session"] is None
+    ended = snapshot["last_session"]  # a page opened after the stop can still show the session that just ended
+    assert (ended["device_id"], ended["label"], ended["started"]) == (PHONE, "Demo Game", session["started"])
+    assert ended["stopped"] >= ended["started"]
     assert client.post("/api/session/stop").status_code == 200  # stopping twice is harmless
+    client.post("/api/session/start", json={"device_id": PHONE})
+    assert client.get("/api/state").json()["last_session"] is None
 
 
 def test_live_summary_while_a_session_runs(client, monkeypatch):
@@ -247,8 +253,13 @@ def test_unreachable_or_nonsense_ai_endpoint_is_just_false(monkeypatch, url):
 def test_pages(client):
     page = client.get("/debug")
     assert page.status_code == 200 and "Reads server names only, never content." in page.text
-    if not main.DIST.is_dir():
-        assert client.get("/", follow_redirects=False).headers["location"] == "/debug"
+    show = client.get("/")  # the show screen: plain files from frontend/
+    assert show.status_code == 200 and "Reads server names only, never content." in show.text
+    assert show.headers["cache-control"] == "no-cache"  # a reload always gets the latest edit
+    for path in ("/app.js", "/app.css", "/assets/tattle-architecture.png", "/assets/fonts/inter-latin-var.woff2"):
+        assert client.get(path).status_code == 200, path
+    assert client.get("/nope.js").status_code == 404
+    assert client.get("/api/health").json()["kb"] > 0  # the files at / do not hide the API
 
 
 def test_missing_kb_files_still_run(monkeypatch, tmp_path):

@@ -39,11 +39,11 @@ def test_labels_are_found_by_app_name_or_file_name():
     ({"data_not_collected": True}, seen(0, 0), "consistent",
      "The label says no data is collected, and this session contacted no known tracking companies."),
     ({"data_used_to_track_you": []}, seen(1, 3), "mismatch",
-     'The label lists nothing under "Data Used to Track You", but this session contacted 1 advertising company.'),
+     'The label lists nothing under "Data Used to Track You", but this session contacted advertising servers of 1 company.'),
     ({"data_used_to_track_you": []}, seen(0, 3), "consistent",
      'The label lists nothing under "Data Used to Track You", and this session contacted no known advertising companies.'),
     ({"data_used_to_track_you": ["Identifiers", "Usage Data"]}, seen(4, 6), "consistent",
-     "The label declares tracking (Identifiers, Usage Data), and this session contacted 4 advertising companies."),
+     "The label declares tracking (Identifiers, Usage Data), and this session contacted advertising servers of 4 companies."),
     ({"data_used_to_track_you": ["A", "B", "C", "D"]}, seen(0, 0), "consistent",
      "The label declares tracking (A, B, C and more); this session contacted no known advertising companies so far."),
 ])
@@ -79,7 +79,7 @@ def test_label_next_to_what_the_session_contacted(client):
                       {"company": "Meta", "category": "social", "hits": 1}],
         "advertising_companies": 2, "tracking_companies": 3}
     assert (body["level"], body["verdict"]) == (
-        "mismatch", 'The label lists nothing under "Data Used to Track You", but this session contacted 2 advertising companies.')
+        "mismatch", 'The label lists nothing under "Data Used to Track You", but this session contacted advertising servers of 2 companies.')
     assert body["note"] == "Tattle sees which servers a phone looks up, not what is sent to them."
     assert (body["verdict_by"], body["rule_verdict"]) == ("rules", body["verdict"])  # no AI: the rules speak
 
@@ -93,7 +93,7 @@ def test_label_next_to_what_the_session_contacted(client):
     other = client.get("/api/label-check", params={"app": "honest-game"}).json()  # another label, same session
     assert (other["level"], other["verdict"]) == (
         "consistent", "The label declares tracking (Identifiers, Usage Data, Location and more), "
-                      "and this session contacted 2 advertising companies.")
+                      "and this session contacted advertising servers of 2 companies.")
     quiet = client.get("/api/label-check", params={"app": "Quiet Notes"}).json()
     assert (quiet["level"], quiet["verdict"]) == (
         "mismatch", "The label says no data is collected, but this session contacted 3 tracking companies.")
@@ -111,7 +111,7 @@ def test_session_without_a_matching_label(client):
     assert client.get("/api/label-check").json()["level"] == "no-session"
 
 
-RULE = 'The label lists nothing under "Data Used to Track You", but this session contacted 1 advertising company.'
+RULE = 'The label lists nothing under "Data Used to Track You", but this session contacted advertising servers of 1 company.'
 
 
 def start_demo_game(client):
