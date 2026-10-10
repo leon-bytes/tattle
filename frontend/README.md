@@ -7,7 +7,6 @@ The judge-facing screen, served by the backend at `/`. Plain HTML, CSS and JavaS
 | `index.html` | the page: stage, counters, cards, the three overlays, and the logo as an inline drawing |
 | `app.css` | the look. Colours and sizes are variables at the top |
 | `app.js` | everything live: the WebSocket, the bubble layout, the detail panel with blocking, the operator keys |
-| `logo/` | the logo preview at `/logo`: the three turtle drawings we chose from (`index.html`, `logo.css`; no script) |
 | `assets/tattle-architecture.png` | the diagram behind "How it works" (a copy of `docs/tattle-architecture.png`) |
 | `assets/fonts/` | Inter (variable, latin), SIL Open Font License, with its license text |
 
@@ -40,22 +39,23 @@ Open <http://127.0.0.1:8000/>. Press `S`, type an app name, Enter. The backend r
 
 | Key | Does |
 | --- | --- |
-| `S` | no session: opens the panel with the app-name field ready (Enter starts). Session running: stops it |
+| `S` | no session: opens the panel with the app-name field ready (Enter starts); the last app name is marked, so typing replaces it. Session running: stops it |
 | `W` `W` | wipe everything (two presses within 3 s) |
 | `H` | How it works |
 | `C` | the operator panel (phone, app name, start, stop, wipe) |
-| `F` | full screen |
+| `F` | full screen. For the demo use the browser's own `F11` instead: in the `F` kind of full screen the browser keeps `Esc` for itself, so the first `Esc` leaves full screen instead of closing a panel |
 | `Esc` | close a panel |
 
 Which phone is shown: the session's phone (also after the session ended, until the next one or a wipe); without a session, the phone that sent the latest lookup. The laptop's own test lookups ("box self-test") are never shown.
 
 ## The logo
 
-A turtle, drawn as inline SVG in `index.html` (no image file). The browser-tab icon is made from that same drawing when the page loads, so there is one drawing to change. `/logo` shows the three variants we chose from (A radar, B network, C hotspot) at tab size, header size and large; **A is the logo**: a turtle seen from above whose shell is a radar screen. To switch, copy the chosen `<symbol>`'s shapes from `logo/index.html` into the `<svg id="logo">` in `index.html`. Colours are written out in the drawing (the same values as the variables in `app.css`), because the tab icon has to work without the stylesheet.
+A turtle, drawn as inline SVG in `index.html` (no image file). The browser-tab icon is made from that same drawing when the page loads, so there is one drawing to change. It is seen from above, and its shell is a radar screen: two rings, a sweep and one blip. To change it, change the shapes inside `<svg id="logo">`. Colours are written out in the drawing (the same values as the variables in `app.css`), because the tab icon has to work without the stylesheet.
 
 ## Rules this code follows
 
 - Names from the network go on the page with `textContent`, never as markup. No `innerHTML`, no `setAttribute`, no inline script or style: `backend/tests/test_security.py` checks this, and the backend serves these files with a policy that allows only files from the backend itself.
 - The WebSocket reconnects by itself after a second; message types the page does not know are ignored.
 - The detail panel's rows are updated in place and keep their order while the pointer is on them: with lookups arriving several times a second, a button must not move away under a click.
+- The tracker list's sentence in the detail panel is always built by the page, from the bubble as it is now (`listSentence`). From `GET /api/explain` the page takes only the AI's text, who wrote it, and `pending`. The backend's copy of the list sentence dates from the moment the panel asked, and a company's category can change as lookups arrive.
 - No external requests at all: the demo has to work without internet.

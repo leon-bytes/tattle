@@ -14,7 +14,7 @@ The box is one laptop running two things: the hotspot and the sensor on the lapt
   - `box-up` done (it warns if the VPN is still on)
   - sensor running and showing `backend: connected`
   - OpenSnitch: the sensor's two allow rules are in place (DNS to `9.9.9.9`, HTTP to the VM), so no prompt appears mid-demo
-  - page open full-screen at `http://<vm-ip>:8000/`
+  - page open full-screen at `http://<vm-ip>:8000/` (with `F11`, so that `Esc` still closes a panel), and `/debug` in a second window behind it
   - laptop set not to sleep
   - charger packed
 - Test iPhone:
@@ -146,6 +146,8 @@ About 4,400 domains from Disconnect's open tracking-protection list, plus our ow
 - Everyone: our AI tools and our challenges (from `docs/CHALLENGES.md`)
 
 ## Submission: before the repo goes public
+
+The submission text is drafted in `docs/SUBMISSION.md`, with a list at its top of what to check before pasting.
 
 If the submission needs a public repository, or before this one is opened up:
 

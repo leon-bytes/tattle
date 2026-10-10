@@ -215,6 +215,7 @@ the same call five seconds later
 
 - It always answers at once. `text` is what to show; `by` is `"list"` (the tracker list's sentence) or the model's name; `fallback` is always the list's sentence; `pending` means the AI is being asked: call again in a second.
 - Without an `ai.py` that has `explain_company`, the first answer is the only one: `by` stays `"list"` and `pending` is `false`.
+- `text` and `fallback` describe the moment of the call: the category in them is the one the company was mostly contacted for *then*. The show screen therefore builds the list's sentence itself, from the bubble as it is now (same wording), and takes from this answer only `by`, `pending` and the AI's `text`.
 - The AI's text is kept by the backend until the next wipe or session start, so the second time a company is opened the first answer already carries it.
 - `domains` are the company's server names in this session, most looked up first (20 at most). `device_id` only matters while there is no session: then it limits the count to that phone.
 - The second answer above was written by a stand-in module used for testing, not by a real model.

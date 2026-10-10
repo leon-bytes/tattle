@@ -454,9 +454,12 @@ function renderDetail(view) {
     plural(list.length, "server name") + " · " + plural(list.reduce((sum, row) => sum + row.count, 0), "lookup");
 
   const answer = unknown ? null : explained.get(key), byAi = !!answer && answer.by !== "list";
-  $("detail-text").textContent = unknown ? "No list knows these server names. The AI is asked about each one in the background: a name it can put a company to moves to that company's bubble, marked as a guess." :
-    answer ? answer.text : listSentence(bubble);
-  $("detail-facts").textContent = byAi ? answer.fallback : "";
+  // The list's sentence is built here, from the bubble as it is now: the backend's copy dates from
+  // when the panel asked, and a company's category can change as more lookups arrive.
+  $("detail-text").textContent = !unknown ? (byAi ? answer.text : listSentence(bubble)) : "No list knows these server names. " + (state.health.ai === true ?
+    "The AI is asked about each one in the background: a name it can put a company to moves to that company's bubble, marked as a guess." :
+    "No AI is answering right now, so they stay unidentified.");  // health.ai: the last call to the AI module worked
+  $("detail-facts").textContent = byAi ? listSentence(bubble) : "";
   $("detail-by").textContent = unknown ? "NOT IDENTIFIED" : byAi ? "FROM THE AI" : bubble.guess ? "AI GUESS, NOT ON OUR LIST" : "FROM OUR TRACKER LIST";
   $("detail-by").className = "source" + (byAi ? " ai" : "");
   $("detail-model").textContent = byAi && answer.by !== "ai" ? "written by " + answer.by : "";
@@ -548,6 +551,7 @@ document.addEventListener("keydown", event => {
     open("controls");
     event.preventDefault();  // or the "s" lands in the input we are about to focus
     $("ctl-label").focus();
+    $("ctl-label").select();  // the last session's app name is marked, so typing replaces it
   } else if (key === "w") wipe();
   else if (key === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
 });

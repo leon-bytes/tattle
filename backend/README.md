@@ -48,7 +48,7 @@ bash backend/start.sh
 
 It loads `.env` if there is one (as plain `KEY=value` lines; unfilled `<placeholders>` are skipped), prints the addresses to open, and runs the same command as above with `--host 0.0.0.0`, so the host laptop can reach it. The order of the whole demo start is in `docs/RUNBOOK.md`.
 
-- `/` is the show screen: the files in `frontend/`, read at each request (no build step, reload after an edit). Without `frontend/index.html`, `/` redirects to the debug page. `/logo` is a preview of the logo variants, from the same folder.
+- `/` is the show screen: the files in `frontend/`, read at each request (no build step, reload after an edit). Without `frontend/index.html`, `/` redirects to the debug page.
 - `/present` is a plain presenter view (companies as coloured blocks, a counter, the summary, the privacy banner). It is insurance in case the show screen fails; controls stay on `/debug`.
 
 - The host reaches the VM at its `192.168.122.x` address (`ip -4 -brief addr` shows it). The sensor on the host gets `--backend http://<vm-ip>:8000`, and the browser opens `http://<vm-ip>:8000/`.

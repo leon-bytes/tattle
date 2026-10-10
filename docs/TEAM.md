@@ -336,13 +336,14 @@ docs/CHALLENGES.md   running log of problems and AI tools used
 docs/FRONT-QUICKSTART.md  run the backend with replayed traffic; real examples of every message
 docs/AI-QUICKSTART.md     what ai.py must expose and how the backend calls it
 docs/RUNBOOK.md           cold laptop to demo-ready in two minutes, and the switch to replay mode
+docs/SUBMISSION.md        draft of the submission text, with what to check before pasting it
 docs/PROJECT-GUIDE.md     the whole project in one self-contained file, for pasting into an AI chat
 sensor/              DNS resolver that runs on the box (the laptop itself, not the VM)
 box/                 scripts to bring the hotspot up/down on the box (Linux + NetworkManager)
 backend/app/         FastAPI app (main, kb lookup, state, db, ai), plus two plain pages: /debug (operator console) and /present (fallback view)
 backend/start.sh     one command to start the backend for the demo
 backend/sql/         schema.sql
-frontend/            the show screen served at /: index.html, app.css, app.js, assets/ (plain files, no build step); logo/ is the logo preview at /logo
+frontend/            the show screen served at /: index.html, app.css, app.js, assets/ (plain files, no build step)
 data/kb.json         tracker knowledge base (built by tools/build_kb.py)
 data/kb_overrides.json
 data/ai_cache_seed.json   optional precomputed AI answers
