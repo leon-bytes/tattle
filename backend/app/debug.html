@@ -90,7 +90,8 @@ function renderStatus() {
   $("status").replaceChildren(
     flag("websocket", connected),
     flag("sensor", seen != null && seen < 10),
-    flag("ai", health.ai), flag("db", health.db, health.db_error),
+    flag("ai", health.ai), ...(health.ai_endpoint == null ? [] : [flag("ai endpoint", health.ai_endpoint)]),
+    flag("db", health.db, health.db_error),
     el("span", "kb " + (health.kb ?? "?") + " domains", "pill"),
     el("span", counts.hits + " hits, " + counts.blocked + " blocked", "pill"),
     el("span", counts.hidden + " hidden-traffic attempts", "pill"),

@@ -2,7 +2,7 @@
 
 # Tattle: project guide
 
-**Last updated: Saturday 2026-10-10, 14:08 local time.**
+**Last updated: Saturday 2026-10-10, 16:23 local time.**
 
 ## Note to an AI reader
 
@@ -70,7 +70,7 @@ Judges score five things: **Originality**, **Technical Understanding**, **Functi
 | --- | --- | --- |
 | Best Use of Provided Backend (a Postgres database the organizers provide) | The database does real work: a copy of the tracker list, session history, a cache of AI answers, a "top companies per app" view | The history view working on screen (backend side is built; the screen is not) |
 | Best Use of Open Source AI | An open model classifies names no list knows, writes the summary, and fact-checks privacy labels | A clear before/after: lists only versus with AI (the AI module is not written yet) |
-| Best Use of Graphics Technologies (ROCm) | The model is served on an AMD GPU through ROCm | Notes and screenshots of the ROCm setup, and real numbers such as tokens per second (not done yet) |
+| Best Use of Graphics Technologies (ROCm) | The model is served on an AMD GPU (a Radeon PRO W7900 with 48 GB of video memory) through ROCm | Notes and screenshots of the ROCm setup, and real numbers such as tokens per second (not done yet) |
 | Best Design / Prettiest Hack | The live graph is the showpiece | A consistent palette and type (frontend not built yet) |
 
 Tracks we skip: Data Capturing Hardware, Jetson, Financial Services, Innovation for Good, Pathways & Perception, the robot dashboard, and the Analytics Platform.
@@ -83,9 +83,9 @@ Tracks we skip: Data Capturing Hardware, Jetson, Financial Services, Innovation 
 
 | Role | Owns |
 | --- | --- |
-| **BOX** | The hotspot, the DNS sensor (`sensor/`), the hotspot scripts (`box/`), the backend core (`backend/app/` except `ai.py`), `tools/fake_sensor.py` |
+| **BOX** | The hotspot, the DNS sensor (`sensor/`), the hotspot scripts (`box/`), the backend core (`backend/app/` except `ai.py`), `tools/fake_sensor.py`, and since Saturday afternoon the privacy labels for the demo apps (`data/labels/`) |
 | **FRONT** | The web app the judges look at (`frontend/`): live bubble graph, device panel, block buttons, session controls, a "how it works" view |
-| **AI** | The model server on an AMD cloud notebook, `backend/app/ai.py`, the tracker knowledge base (`tools/build_kb.py`, `data/kb.json`, `data/kb_overrides.json`), privacy labels for the demo apps (`data/labels/`), `data/ai_cache_seed.json`, the visual identity (palette, type), the pitch diagram |
+| **AI** | The model server on the AMD server, `backend/app/ai.py`, the tracker knowledge base (`tools/build_kb.py`, `data/kb.json`, `data/kb_overrides.json`), `data/ai_cache_seed.json`, the visual identity (palette, type), the pitch diagram |
 
 Each owner edits only their own folders. Shared files: `docs/TEAM.md` (the interface contract), `docs/PITCH.md`, `docs/CHALLENGES.md`, `.gitignore`, `README.md`.
 
@@ -205,6 +205,8 @@ Plain-word definitions of everything the project relies on. Later sections use t
 - **Container, podman.** A lightweight way to run a program in isolation. We use podman only to run a throwaway Postgres for tests.
 - **React, Vite.** The JavaScript library and build tool the frontend is planned in. Vite's development server can **proxy** requests to the backend.
 - **LLM, OpenAI-compatible API, ROCm.** An LLM is a large language model. "OpenAI-compatible" means the model server speaks the widely used `/chat/completions` request format. ROCm is AMD's software for running models on AMD graphics cards.
+- **Ollama.** A program that runs language models on a machine and offers them over an OpenAI-compatible API. Ours runs on the AMD server and listens only on that server's own loopback address.
+- **SSH, SSH tunnel.** SSH is the standard encrypted way to log in to another machine. A tunnel uses that connection to make a port on the far machine appear as a port on this one: with ours, `127.0.0.1:8081` on the backend's machine leads to Ollama on the AMD server. Nothing else can reach Ollama.
 - **XSS (cross-site scripting).** Getting a page to run attacker-supplied script, typically by sneaking markup such as `<img onerror=…>` into text the page inserts as HTML. Prevented by inserting text as text.
 - **CSP (content security policy), nonce.** A response header that tells the browser what a page may run and load. Ours allows only the page's own script, identified by a random one-time value (the nonce).
 - **Cross-site request, Origin header, CSRF, cross-site WebSocket.** A browser page from site A can send requests to site B. For anything that changes state this is an attack called CSRF. Browsers attach an `Origin` header saying which site the page came from; we refuse state-changing requests and WebSocket connections whose Origin is another site.
@@ -234,7 +236,7 @@ Plain-word definitions of everything the project relies on. Later sections use t
                              │ │ IN A VIRTUAL MACHINE on the laptop (192.168.122.x)           │ │
                              │ │  backend (FastAPI, port 8000)                                │ │
                              │ │    names ──▶ company + category (data/kb.json, overrides)    │ │
-                             │ │    state in memory; optional: ai.py ──▶ model server (AI)    │─┼──▶ AMD notebook (optional)
+                             │ │    state in memory; optional: ai.py ──▶ model server (AI)    │─┼──▶ AMD server, by SSH tunnel (optional)
                              │ │                     optional: Postgres history               │─┼──▶ provided Postgres (optional)
                              │ │    WebSocket /ws + REST /api/…                               │ │
                              │ │    serves: frontend build at /, /debug, /present             │ │
@@ -243,7 +245,7 @@ Plain-word definitions of everything the project relies on. Later sections use t
                              └──────────────────────────────────────────────────────────────────┘
 
  Teammates' machines: FRONT and AI run the backend plus tools/fake_sensor.py locally (no hotspot needed).
- The AMD cloud notebook runs the model server. The organizers run the Postgres.
+ The AMD server runs the model server (Ollama), reached through an SSH tunnel. The organizers run the Postgres.
 ```
 
 **What runs where, and the reason:**
@@ -253,7 +255,7 @@ Plain-word definitions of everything the project relies on. Later sections use t
 | The laptop itself (host) | Hotspot and sensor, nothing else | The Wi-Fi card is the laptop's and cannot be handed to the VM. The sensor must sit where the phones' packets arrive. It needs only plain Python and one small package, which keeps the host clean. |
 | A VM on the same laptop | Backend, the frontend build it serves, the dev tools | All development happens in the VM; running the backend where it was built and tested avoids setting up a second Python environment on the host. The host reaches the VM over libvirt's internal network, which does not depend on the Wi-Fi card. |
 | Teammates' laptops | Backend plus the fake sensor, for development | So FRONT and AI can work without the hotspot. |
-| AMD cloud notebook | The language model server | That is where the sponsor's GPU is. Optional at demo time. |
+| The AMD server | The language model server (Ollama) | That is where the sponsor's GPU is: a Radeon PRO W7900 (48 GB of video memory), 128 cores, 503 GB of memory, Ubuntu 24.04. It listens on its own loopback address only and is reached from the backend's VM through an SSH tunnel. Optional at demo time. |
 | Organizers' server | Postgres | It is the "provided backend" of a sponsor track. Optional at demo time. |
 
 Two properties of this design matter everywhere else:
@@ -414,7 +416,7 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 - **Summary:** a few short sentences made to be read aloud, for example: "In 40 seconds, Demo Game contacted 9 companies: 4 advertising (Google, AppLovin, Unity and 1 more), 2 analytics (Sentry, AppsFlyer), and 3 others. 2 lookups were blocked." A company counts once, under the category it was mostly contacted for. Advertising, analytics, social and fingerprinting are named; the rest are "others". It says "contacted", never "sent".
 - **Wipe:** clears devices, hits, blocks, the session, the summary and AI answers from memory, and deletes the running session's rows from the database. It does not delete finished sessions.
 - **AI is optional:** if `app/ai.py` is missing or fails to import, the backend runs without it. Its calls happen in background tasks with a 10 s limit; a failure only sets `health.ai` to false.
-- **Health:** broadcast every 5 s and whenever it changes.
+- **Health:** broadcast every 5 s and whenever it changes. If `AI_BASE_URL` is set, the backend also asks the model server for its list of models every 15 s and reports whether it answered as `ai_endpoint`: that shows a dead tunnel before any AI call is made.
 - **Memory bounds:** last 5,000 hits; 500 names waiting for the AI; 5,000 remembered AI answers; 256 devices; 50 WebSocket clients, each allowed to fall 2,000 messages behind before it is dropped.
 
 **Settings** (environment variables; the backend does not read `.env` itself, `start.sh` does):
@@ -426,9 +428,11 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | `AI_CACHE_SEED_PATH` | `data/ai_cache_seed.json` | optional precomputed AI answers |
 | `LABELS_DIR` | `data/labels` | privacy label files |
 | `DATABASE_URL` | none | Postgres connection string; unset means no database |
-| `AI_MODEL` | none | shown as the author of AI-written sentences; `AI_BASE_URL` and `AI_TOKEN` are for `ai.py` itself |
+| `AI_MODEL` | none | shown as the author of AI-written sentences |
+| `AI_BASE_URL` | none | the model server's address, used by `ai.py`. If set, the backend checks every 15 s that it answers. With the SSH tunnel: `http://127.0.0.1:8081/v1` |
+| `AI_TOKEN` | none | used by `ai.py`. Ollama needs no key, so the placeholder `unused` is fine |
 
-**Tests:** `backend/tests/`, 98 tests with a Postgres available (84 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
+**Tests:** `backend/tests/`, 101 tests with a Postgres available (87 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
 
 ### 6.4 Database layer (optional): `backend/app/db.py`, `backend/sql/schema.sql`
 
@@ -455,15 +459,15 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | --- | --- |
 | `fake_sensor.py` | Replays a recorded file of events into the backend with the original timing, standard library only. Options: `--backend`, `--speed N`, `--loop`. It reads the blocklist too, so blocking works in replay mode. This is the development loop for FRONT and AI, and the demo fallback |
 | `selfcheck.py` | End-to-end check without Wi-Fi: starts its own backend and a sensor on loopback, replays the synthetic session, sends real DNS queries through the sensor, checks what arrives on `/ws` (20 checks) |
-| `build_kb.py` | Downloads Disconnect's `services.json` and writes `data/kb.json`. A note at its top lists the choices made and what deserves a second look. Written by BOX as a first version; it belongs to AI |
+| `build_kb.py` | Downloads Disconnect's `services.json` and writes `data/kb.json`. It tidies company names by one rule for all entries: names written entirely in lowercase get capitals ("reddit" becomes "Reddit"), stray spaces are removed, and a short table holds hand-picked renames; names styled on purpose ("eBay") are left alone. A note at its top lists the choices made and what deserves a second look. Written by BOX as a first version; it belongs to AI |
 | `try_ai.py` | Calls each function of an `ai.py` once with sample data, under the backend's time limit, and checks the shape of the answers. For the AI owner |
 
 ### 6.6 Data: `data/`
 
-- **`kb.json`**: 4,430 domains from Disconnect's list (2,738 advertising, 974 analytics, 429 content, 239 fingerprinting, 50 social), 1,877 companies. Licensed CC BY-NC-SA 4.0, like the list it is derived from; credited in the README; non-commercial use only. Never edited by hand: rebuilt with `python3 tools/build_kb.py`.
-- **`kb_overrides.json`**: 53 hand entries in four groups. Apple's system domains as `vendor` (with Apple's advertising hosts as `advertising`); the big content networks (Akamai, Fastly, CloudFront and `amazonaws.com` as "Amazon Web Services") as `content`; phone-only SDK hosts the web-centred list lacks (Firebase, AppLovin's second domain, Unity Ads, ironSource, Vungle, Mintegral, InMobi, AppsFlyer's SDK domain); and the own servers of three apps seen in the live test, as `vendor`: Netflix (`netflix.com`, `nflxvideo.net`, `fast.com` and others), Discord (`discord.com`, `discord.gg`, `discordapp.net` and others) and OpenAI (`chatgpt.com`, `openai.com`, `oaistatic.com` and others). Other apps' own servers are deliberately left for the AI classifier.
+- **`kb.json`**: 4,430 domains from Disconnect's list (2,738 advertising, 974 analytics, 429 content, 239 fingerprinting, 50 social), 1,877 companies (52 of the names tidied by the rule above). Licensed CC BY-NC-SA 4.0, like the list it is derived from; credited in the README; non-commercial use only. Never edited by hand: rebuilt with `python3 tools/build_kb.py`.
+- **`kb_overrides.json`**: 57 hand entries in four groups. Apple's system domains as `vendor` (with Apple's advertising hosts as `advertising`); the big content networks (Akamai, Fastly, CloudFront and `amazonaws.com` as "Amazon Web Services") as `content`; phone-only SDK hosts the web-centred list lacks (Firebase, Google's app analytics and app advertising hosts `app-analytics-services.com` and `app-ads-services.com`, AppLovin's second domain, Unity Ads, ironSource, Vungle, Mintegral, InMobi, AppsFlyer's SDK domain); Reddit's media hosts (`redd.it`, `redditmedia.com`) as `content`, like `reddit.com` in the list; and the own servers of three apps seen in the live test, as `vendor`: Netflix (`netflix.com`, `nflxvideo.net`, `fast.com` and others), Discord (`discord.com`, `discord.gg`, `discordapp.net` and others) and OpenAI (`chatgpt.com`, `openai.com`, `oaistatic.com` and others). Other apps' own servers are deliberately left for the AI classifier.
 - **`replays/demo-synthetic.jsonl`**: 274 made-up events over 119 seconds: a phone ("Test iPhone A") joining, then a free game with ad mediation, using real public host names plus a fictional `puzzle-garden-game.example` that stays unknown on purpose. With the real knowledge base it gives 96 lookups to 13 companies and 4 hidden-traffic attempts. **It is simulated traffic, not a recording of a real phone.** No real recording exists yet.
-- **`labels/`**: empty. One file per demo app is planned (shape in section 7.8).
+- **`labels/`**: empty. One file per demo app is planned (shape in section 7.8). BOX writes them, from the App Store label of each app as text or screenshots.
 - **`ai_cache_seed.json`**: does not exist. Optional (shape in 7.7).
 
 ### 6.7 Not built yet
@@ -520,7 +524,7 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 {"type":"snapshot","devices":[{"device_id":"10.42.0.23","name":"Test iPhone A","persist":true}],
  "hits":[ …hit messages… ],"blocked":{"companies":[],"domains":[],"covers":{}},
  "session":null,"summary":null,
- "health":{"db":false,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4482,"malformed":0}}
+ "health":{"db":false,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4486,"malformed":0,"ai_endpoint":null}}
 
 {"type":"device","device_id":"10.42.0.23","name":"Device 1","persist":false}
 
@@ -537,7 +541,7 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 {"type":"session","session":{"device_id":"10.42.0.23","label":"Demo Game","started":1760070000.0}}
 {"type":"session","session":null}
 
-{"type":"health","db":true,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4482,"malformed":0}
+{"type":"health","db":true,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4486,"malformed":0,"ai_endpoint":null}
 
 {"type":"wiped"}
 ```
@@ -549,7 +553,7 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 - `summary`: about every 3 s while a session runs and new hits arrived, once when it stops, and again if the AI writes a better one. `by` is `"template"` or the model's name.
 - `device.name` is never empty. A device whose `device_id` is a loopback address (`127.0.0.1`, `::1`) is the box testing itself, named "box self-test": leave it out of device lists and counts.
 - `blocked.covers` says, for each blocked company, which names the block covers. Each name also covers everything under it. An empty list means no domain of that company is known, so nothing is blocked. A blocked single domain covers itself and its subdomains only.
-- `health.sensor_seen`: when the sensor last called in; older than about 10 s means it is gone. `kb`: how many domains are loaded (0 means the file is missing). `db_error`: `null`, or why the database is unusable. `malformed`: names refused since the backend started.
+- `health.sensor_seen`: when the sensor last called in; older than about 10 s means it is gone. `kb`: how many domains are loaded (0 means the file is missing). `db_error`: `null`, or why the database is unusable. `malformed`: names refused since the backend started. `ai`: whether the last call made by `ai.py` worked. `ai_endpoint`: whether the model server answers at `AI_BASE_URL` (`null` if none is set); it is about the server and the tunnel, not about `ai.py`.
 - `wiped`: forget everything shown. An empty `blocked` and a `null` session follow.
 
 ### 7.6 Screens → backend: REST
@@ -624,11 +628,19 @@ How the backend uses it:
 
 Keyed by the exact host name. Seeded names show with source `ai`, are never sent to the model, and survive a wipe.
 
-The model server is meant to be OpenAI-compatible; `ai.py` reads `AI_BASE_URL`, `AI_TOKEN` and `AI_MODEL` from the environment.
+**The model server** (set up by AI, in progress): Ollama on the AMD server, listening on that server's `127.0.0.1:11434` only, with no API key. From the backend's machine it is reached through an SSH tunnel:
+
+```
+ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd
+```
+
+- `-N`: no remote command, only the tunnel. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama's port on the server. `ServerAliveInterval=30`: notice a dead connection. `ExitOnForwardFailure=yes`: stop at once if the port cannot be forwarded. `amd` is the SSH name of the server on the backend's machine (key authentication).
+- The backend's `.env` then holds `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` (a placeholder; Ollama ignores it) and `AI_MODEL=<model>`. `ai.py` reads all three from the environment.
+- `health.ai_endpoint` turns `true` once the tunnel is up and Ollama answers. **Unverified:** nobody has run the tunnel against this backend yet; the health check is tested against a stand-in server.
 
 ### 7.8 Privacy labels and the fact-check
 
-One file per demo app, `data/labels/<app-slug>.json`, typed in by hand from the App Store page:
+One file per demo app, `data/labels/<app-slug>.json`, written by BOX from the App Store page (none exists yet):
 
 ```json
 {"app": "Demo Game", "source_url": "<App Store link>", "checked": "<date>",
@@ -715,6 +727,7 @@ Each entry: what we do, why, and what we decided against.
 **Turning names into companies**
 
 23. **A public tracker list plus a short override file; overrides win.** Disconnect's list is open, maintained and credible, but built for websites: phone-only SDK hosts and all of Apple's own servers were missing, so they are in the overrides. *Rejected:* writing our own list from scratch.
+23a. **Company names are tidied by rule when the list is built, never by hand per entry.** Disconnect writes some names in lowercase ("reddit"). One rule in `build_kb.py` fixes all of them the same way, so a rebuild cannot undo a hand edit.
 24. **"Amazon Web Services" is a separate company from "Amazon".** CloudFront and `amazonaws.com` host half the internet; blocking Amazon's advertising business must not take them down, and calling hosted content "Amazon" would be inaccurate.
 25. **Apple's own servers are `vendor`, except its advertising hosts.** A phone talks to its maker constantly; that is not an app tracking you.
 26. **The same phone and name within 2 seconds is one lookup.** iPhones ask three record types at once.
@@ -731,6 +744,7 @@ Each entry: what we do, why, and what we decided against.
 **Security**
 
 33. **No login for the demo.** Protection is network position (phones cannot reach the backend) plus refusing cross-site requests. A token would be a small change but needs frontend work; decided against for now (section 11).
+33a. **The model server has no key and no public port.** Ollama listens only on the AMD server's own loopback address, so the only way in is an SSH tunnel from the backend's machine, which needs the SSH key. That replaces an API key. *Rejected:* opening Ollama's port on the network (it has no authentication of its own).
 34. **Everything from the network is shown as text, and our pages run only their own script.** See section 11.
 
 ---
@@ -773,9 +787,15 @@ Each entry: what we do, why, and what we decided against.
 - **"Device 1" was the laptop itself:** its own test lookup through the sensor. Now shown as "box self-test".
 - **Names the knowledge base did not know:** Netflix's (`fast.com`, `nflxvideo.net`), Discord's and OpenAI's. Added to the overrides as `vendor`.
 
+**Blocking confirmed on the phone** (Saturday, about 16:10), with the new sensor:
+
+- The company AppsFlyer was blocked, Reddit was force-quit and reopened about 15 seconds later. New `appsflyersdk.com` lookups arrived as blocked (the counter went to 4) and Reddit kept working.
+- The 10-second lifetime cap is what made the block take hold that fast, without airplane mode.
+- The laptop's own test lookup shows as "box self-test" and is not counted: with one phone joined the page shows 1 device.
+- Reddit's traffic showed more names the knowledge base lacked (Google's app analytics and app advertising hosts, Reddit's media hosts) and a company shown in lowercase as "reddit". All fixed (section 6.6).
+
 **Still unverified on hardware** (as of the timestamp at the top):
 
-- **That a block visibly stops an app on the phone** (de-risk test 2). The one try predates the fixes above.
 
 - `box-down.sh` taking down a hotspot that actually ran, and NetworkManager then reconnecting the Wi-Fi on the real interface. Which of the two layouts the passing run ended up in was not recorded. Also: that the narrow input rules let an iPhone join; that our chains sit ahead of the laptop's own firewall rules; that the hotspot hands out IPv4 only (our rules are IPv4 only).
 - The sensor behind the real redirect: real phone addresses, a real iPhone, blocking actually stopping an app (de-risk test 2 below).
@@ -791,8 +811,8 @@ Each entry: what we do, why, and what we decided against.
 | # | Test | Status |
 | --- | --- | --- |
 | 1 | Hotspot up, an iPhone joins, has internet, its DNS is visible on the laptop | Passed by hand, and again with the scripts and the sensor |
-| 2 | Redirected lookups reach the sensor; blocking a domain stops it working on the iPhone | First half passed. Blocking: one try, looked broken; fixes made, **re-test pending** |
-| 3 | The model server on the AMD notebook is reachable from a laptop | Unknown to this document (AI's task) |
+| 2 | Redirected lookups reach the sensor; blocking a domain stops it working on the iPhone | **Passed**: blocked AppsFlyer, reopened Reddit, AppsFlyer's lookups were refused and Reddit kept working |
+| 3 | The model server on the AMD server answers from the backend's machine (through the SSH tunnel) | In progress (AI is setting up Ollama); not verified |
 | 4 | The provided Postgres is reachable from a laptop | Unknown to this document (AI's task) |
 | 5 | Find two or three free iPhone apps that light up fast; pick the demo app | **Not done yet** |
 
@@ -838,6 +858,7 @@ The team presents as a security team, so judges may probe.
 | SQL injection | All database commands pass values as parameters. One test scans every statement; another stores `Robert'); DROP TABLE hits; --` as an app name and reads it back |
 | Guest phones reaching the backend | The hotspot firewall rejects traffic from phones to the VM network (**unverified on hardware**) |
 | The hotspot password leaking | Asked at a prompt; stored only in the hotspot profile, which `box-down.sh` deletes |
+| The model server has no API key | It listens only on its own machine's loopback address; the backend reaches it through an SSH tunnel, which needs our SSH key |
 
 **Known gaps, and why they are acceptable for a demo:**
 
@@ -893,12 +914,12 @@ Then open `http://127.0.0.1:8000/debug` (controls and a live table) or `/present
 ```sh
 python3 -m venv sensor/.venv && sensor/.venv/bin/pip install -r sensor/requirements-dev.txt   # once
 sensor/.venv/bin/python -m pytest sensor/tests       # 35 tests, about 50 s
-backend/.venv/bin/python -m pytest backend/tests     # 84 tests; 14 database tests are skipped
+backend/.venv/bin/python -m pytest backend/tests     # 87 tests; 14 database tests are skipped
 backend/.venv/bin/python tools/selfcheck.py          # end to end on loopback, 20 checks
 
 # with a throwaway Postgres for the database tests:
 podman run -d --rm --name tattle-pg-test -e POSTGRES_PASSWORD=tattle-test -p 127.0.0.1:55432:5432 docker.io/library/postgres:17-alpine
-TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 98 tests
+TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 101 tests
 podman stop tattle-pg-test
 ```
 
@@ -913,11 +934,14 @@ Done once beforehand: the backend venv in the VM; copies of `sensor/` and `box/`
 | 3 | Laptop | `sudo bash box/box-up.sh <wifi-interface>` (asks for the hotspot password; up to half a minute) | `HOTSPOT: … runs on <interface>` and `INTERNET: … is on <interface>` |
 | 4 | Laptop | `sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000` | `backend: connected` |
 | 5 | VM | `bash backend/start.sh` | the addresses to open |
+| 5a | VM, only if the AI is used | `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd` | no output; `health.ai_endpoint` turns true within 15 s |
 | 6 | Laptop browser | `http://<vm-ip>:8000/`, full screen | the page; sensor shown as alive |
 | 7 | iPhone | joins `Tattle-Demo` | "Device 1" appears |
 | 8 | Page | Wipe | empty screen, ready |
 
 Between steps 3 and 4 phones on the hotspot have no DNS. The laptop's own test lookup shows on the page as "box self-test". Afterwards: stop the sensor, then `sudo bash box/box-down.sh`.
+
+**Recording a replay from our own phone** (the full steps are in `box/README.md`): on the laptop, restart the sensor with `--record <app-slug>.raw.jsonl` added; use the app for two minutes; stop. The file is written in the folder the sensor was started from. Device names are already replaced in it ("Test iPhone A"); host names are not, so it holds everything the phone looked up, including its background apps. It is copied into the VM as `data/replays/<app-slug>.raw.jsonl` (a name git ignores), looked through, and saved without the lines that do not belong as `data/replays/<app-slug>.jsonl`. No real recording exists yet.
 
 **The talk** (about 3:30): hook ("Your phone talks to dozens of companies you've never heard of. Want to see who?"); the consent line; hand over the iPhone and start a session named after the app; narrate as the screen fills, read the summary aloud; block a company, have the app closed and reopened (a block stops new connections, not open ones), and watch the blocked counter climb while the app keeps working; the label check, if labels exist; how it works, with the diagram; honest limits and the AI tools we used; close ("Anyone can hand a phone to Tattle and get the truth in a minute, with nothing to install").
 
@@ -979,11 +1003,11 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 | Part | State |
 | --- | --- |
 | Sensor | Complete. 35 tests. Real DNS forwarding, guard list, blocklist, refusal of odd names, the 10-second lifetime cap, batching, surviving a backend outage. **Ran on the real laptop in the hardware test** |
-| Backend core | Complete. 98 tests with Postgres, 84 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
-| Knowledge base | First version: 4,430 domains from Disconnect plus 53 overrides. Checked against the simulated replay; the live test showed gaps for apps' own servers, three of which were filled |
-| Label fact-check | Endpoint complete, tested with stand-in label files. No real labels exist |
+| Backend core | Complete. 101 tests with Postgres, 87 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
+| Knowledge base | First version: 4,430 domains from Disconnect plus 57 overrides. Checked against the simulated replay; the live tests showed gaps (apps' own servers, Google's app hosts, Reddit's media hosts), which were filled by hand |
+| Label fact-check | Endpoint complete, tested with stand-in label files. No real labels exist yet |
 | Database layer and history endpoints | Complete, tested against Postgres 17 in a container. Not yet connected to the organizers' Postgres |
-| AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, failures, time-outs). No real `ai.py` |
+| AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, failures, time-outs), and `health.ai_endpoint` is tested against a stand-in server. No real `ai.py`; the tunnel to the real model server has not been tried from this backend |
 | `/debug` and `/present` | Working. Checked in a scripted browser, including hostile input; `/present` also in one real browser screenshot |
 | Fake sensor and simulated replay | Working |
 | End-to-end self-check | 20 of 20 checks |
@@ -992,7 +1016,7 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 
 ### Hotspot scripts: passed on hardware
 
-`box/box-up.sh` passed on the third real run: an iPhone on the hotspot showed up live on the screen (section 9). `box/box-down.sh` has worked twice as the cleanup after a failed start; taking down a hotspot that really ran is not confirmed. Blocking on a real phone is **not confirmed**: the one try looked broken and the fixes are not re-tested. The remaining unverified items are listed in section 9.
+`box/box-up.sh` passed on the third real run: an iPhone on the hotspot showed up live on the screen (section 9). Blocking is confirmed on a real phone: a blocked company's lookups were refused after the app was reopened, and the app kept working. `box/box-down.sh` has worked twice as the cleanup after a failed start; taking down a hotspot that really ran is not confirmed. The remaining unverified items are listed in section 9.
 
 ### Not built
 
@@ -1000,7 +1024,7 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 | --- | --- |
 | `frontend/`: the real interface (bubble graph, block, session controls, label panel, history view, how-it-works view) | FRONT |
 | `backend/app/ai.py` and the model server; notes and numbers for the GPU track | AI |
-| Privacy labels for the demo apps (`data/labels/`) | AI |
+| Privacy labels for the demo apps (`data/labels/`) | BOX (moved from AI); waiting for the apps' App Store label texts |
 | `data/ai_cache_seed.json` | AI (optional) |
 | A recording of a real session from our own phone (`sensor --record`) | BOX, after the hardware test |
 | The backup video, the submission text | Everyone |
@@ -1023,7 +1047,7 @@ None open at the time of writing. Known limits are in sections 11 and 12.
 ### Next tasks, by role, in priority order
 
 **BOX**
-1. Re-test blocking on the real phone with the new sensor (de-risk test 2): block the company, close and reopen the app, confirm the blocked counter climbs and the app loses that company. Copy the changed `sensor/` to the laptop first.
+1. Write the label files for the demo apps (`data/labels/<app-slug>.json`) as their App Store label texts arrive.
 2. Pick the demo apps with AI (de-risk test 5).
 3. Record a real session from our own phone with `--record`, so replay mode is real traffic.
 4. Connect the organizers' Postgres (`DATABASE_URL` in `.env`), check `health.db`.
@@ -1040,11 +1064,10 @@ None open at the time of writing. Known limits are in sections 11 and 12.
 Rule for all of it: everything from the API goes on the page as text, never as HTML.
 
 **AI** (start with `docs/AI-QUICKSTART.md`)
-1. The model server reachable from the VM; `ai.py` with `classify_domains` and `summarize`; check it with `tools/try_ai.py`.
-2. Label files for the demo apps in `data/labels/`.
-3. Review the knowledge base and overrides (the notes at the top of `tools/build_kb.py`).
-4. Optional: `label_check`; the seed file for the demo apps.
-5. Visual identity for FRONT; the pitch diagram; notes and numbers for the GPU track.
+1. Ollama running on the AMD server and reachable through the SSH tunnel (`health.ai_endpoint` true); `ai.py` with `classify_domains` and `summarize`; check it with `tools/try_ai.py`.
+2. Review the knowledge base and overrides (the notes at the top of `tools/build_kb.py`).
+3. Optional: `label_check`; the seed file for the demo apps.
+4. Visual identity for FRONT; the pitch diagram; notes and numbers for the GPU track.
 
 **Everyone:** keep the challenges log going; record the backup video after feature lock; write the submission text; rehearse with a timer.
 
@@ -1081,6 +1104,8 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 | 14:00 | Blocking looked broken: a blocked app kept working and the counter stayed at 0 | DNS blocking acts on new lookups only. Answers now live 10 seconds, the screen says what a block covers, and the demo is: block the company, reopen the app. Re-test pending |
 | 14:00 | "Device 1" was the laptop's own test lookup | Shown as "box self-test", not numbered |
 | 14:00 | Real traffic hit names no list knew (Netflix, Discord, OpenAI) | Their own servers added to the hand-written list as "vendor"; the rest is for the AI |
+| 16:10 | (milestone) Blocking confirmed on the real phone | Blocked AppsFlyer, reopened Reddit after about 15 s: AppsFlyer's lookups refused, Reddit kept working. The 10-second lifetime cap did it |
+| 16:20 | More gaps with Reddit: Google's app hosts, Reddit's media hosts, a company shown as lowercase "reddit" | Hosts added by hand; company names are now tidied by rule when the list is built |
 
 ---
 
@@ -1088,6 +1113,7 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 
 | When | What changed in this guide |
 | --- | --- |
+| Sat 2026-10-10 16:23 | **Blocking confirmed on a real phone.** Knowledge base: company names tidied by rule in `build_kb.py` (52 names), 4 overrides added (57). Model server: Ollama on the AMD server behind an SSH tunnel; new `health.ai_endpoint`; `.env` values for the tunnel. Privacy labels moved from AI to BOX. Recording procedure for a real replay written down. Sections 1, 2, 3, 4, 6, 7.5, 7.7, 7.8, 8 (23a, 33a), 9, 11, 13, 16, 17 updated. |
 | Sat 2026-10-10 14:08 | **Hardware test passed** on the third run. Findings from it: blocking acts on new connections only (sensor now caps answer lifetimes at 10 s with `--max-ttl`; `/debug` shows what a block covers; `blocked` messages carry `covers`); the laptop's own test lookup is shown as "box self-test"; Netflix, Discord and OpenAI added to the overrides (53 entries). Sections 3, 4, 5, 6, 7.5, 8 (3a, 22a), 9, 11, 12, 13, 16, 17 updated. Blocking is not yet re-tested on a real phone. |
 | Sat 2026-10-10 13:34 | Second hardware run: the MAC address fix worked; the run then failed where the script forced the Wi-Fi back onto the real interface. `box-up.sh` no longer forces a layout: it waits for NetworkManager to settle, runs the hotspot on the free interface, and records it in a state file for `box-down.sh`. Sections 3, 4, 5, 6.2, 8 (new decision 9a), 9, 13, 16, 17 updated. Not yet re-run on hardware. |
 | Sat 2026-10-10 13:14 | First hardware run of `box-up.sh` failed at the hotspot start (interface "strictly unmanaged"); cause found by hand; script changed to give `tattle0` its own MAC address and to wait for NetworkManager to manage it. Sections 3, 6.2, 8, 9, 16, 17 updated. The changed script is not yet re-run on hardware. |

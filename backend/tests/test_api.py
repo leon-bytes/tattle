@@ -1,7 +1,9 @@
 """The HTTP and WebSocket surface, through FastAPI's test client."""
 import asyncio
 import importlib.util
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,7 +30,7 @@ def test_snapshot_then_live_hits(client):
         assert snapshot["type"] == "snapshot"
         assert (snapshot["devices"], snapshot["hits"], snapshot["session"]) == ([], [], None)
         assert snapshot["blocked"] == {"companies": [], "domains": [], "covers": {}}
-        assert snapshot["health"] == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0}
+        assert snapshot["health"] == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0, "ai_endpoint": None}
 
         assert post_events(client, event("googleads.g.doubleclick.net", 1000.0),
                            event("googleads.g.doubleclick.net", 1000.01, qtype="AAAA"),
@@ -174,13 +176,72 @@ def test_seeded_ai_answers_apply_from_the_start(client):
 
 
 def test_health_tracks_the_sensor(client):
-    assert client.get("/api/health").json() == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0}
+    assert client.get("/api/health").json() == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0, "ai_endpoint": None}
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()
         client.get("/api/blocklist")  # the sensor's poll is its heartbeat
         health = until(ws, "health")
         assert abs(health["sensor_seen"] - time.time()) < 5
         assert (health["db"], health["ai"]) == (False, False)
+
+
+class ModelServer:
+    """A stand-in for the model server behind AI_BASE_URL: answers GET /v1/models like an OpenAI-style API."""
+
+    def __init__(self):
+        outer = self
+        self.authorization = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                outer.authorization.append(self.headers.get("Authorization"))
+                body = b'{"object": "list", "data": [{"id": "test-model"}]}' if self.path == "/v1/models" else b"{}"
+                self.send_response(200 if self.path == "/v1/models" else 404)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/v1"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_health_shows_whether_the_ai_endpoint_answers(monkeypatch):
+    server = ModelServer()
+    monkeypatch.setattr(main, "ai", None)  # no ai.py needed: this watches the server, not the module
+    monkeypatch.setattr(main, "AI_PROBE_SECONDS", 0.05)
+    monkeypatch.setenv("AI_BASE_URL", server.url + "/")
+    monkeypatch.setenv("AI_TOKEN", "unused")  # the placeholder for a server that needs no key
+    with TestClient(main.app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        assert until(ws, "health")["ai_endpoint"] is True
+        assert server.authorization[0] == "Bearer unused"
+        server.stop()  # the tunnel drops
+        while until(ws, "health")["ai_endpoint"] is not False:
+            pass
+        assert client.get("/api/health").json()["ai"] is False  # "ai" still means: the last call of ai.py worked
+        post_events(client, event("ms.applovin.com"))  # and the live loop does not care
+        assert until(ws, "hit")["company"] == "AppLovin"
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:9/v1", "not a url"])
+def test_unreachable_or_nonsense_ai_endpoint_is_just_false(monkeypatch, url):
+    monkeypatch.setattr(main, "ai", None)
+    monkeypatch.setenv("AI_BASE_URL", url)
+    monkeypatch.delenv("AI_TOKEN", raising=False)
+    with TestClient(main.app) as client:
+        deadline = time.time() + 5
+        while client.get("/api/health").json()["ai_endpoint"] is None and time.time() < deadline:
+            time.sleep(0.02)
+        assert client.get("/api/health").json()["ai_endpoint"] is False
 
 
 def test_pages(client):

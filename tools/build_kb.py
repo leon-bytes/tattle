@@ -18,8 +18,11 @@ The file, data/kb.json and data/kb_overrides.json are yours from here on. Worth 
   detection) and "ConsentManagers" are filed under content. "Email" trackers are filed
   under analytics, last in line. Check that this reads right on screen.
 - Company names are Disconnect's (legal owners, often CamelCase): "Unity" for ironSource
-  hosts, "AppLovin" for adjust.com, "LoopMe" for chartboost.com. RENAME below is the
-  place for display names; it has one entry.
+  hosts, "AppLovin" for adjust.com, "LoopMe" for chartboost.com. display_name() below
+  tidies them for the screen: names written all in lowercase get capitals ("reddit" ->
+  "Reddit"), stray spaces go, and RENAME holds the few hand-picked ones. Names styled on
+  purpose ("eBay", "comScore") and names that are domains are left alone. CamelCase
+  names such as "HumanSecurity" are not split into words yet.
 - The list is built for the web. Phone-only hosts (ad mediation SDKs, Firebase, Apple)
   are thin or missing. data/kb_overrides.json fills in the ones the synthetic replay
   uses; real recordings from our phones will show what else is missing.
@@ -59,6 +62,16 @@ CATEGORIES = [
 RENAME = {"FunctionalSoftware": "Sentry"}  # Disconnect's company name -> the name shown on screen
 
 
+def display_name(company: str) -> str:
+    """Disconnect's company name, tidied for the screen. The same rule for every entry, so nothing is fixed by hand."""
+    company = " ".join(company.split())  # stray and doubled spaces
+    if company in RENAME:
+        return RENAME[company]
+    if company == company.lower() and "." not in company:  # all lowercase and not a domain: "reddit" -> "Reddit"
+        return " ".join(word[:1].upper() + word[1:] for word in company.split(" "))
+    return company
+
+
 def load(source: str) -> dict:
     if source.startswith(("http://", "https://")):
         with urllib.request.urlopen(source, timeout=30) as response:
@@ -78,7 +91,7 @@ def build(services: dict) -> dict[str, dict]:
                     for name in value:
                         name = name.strip().strip(".").lower()
                         if "." in name and "/" not in name and " " not in name:
-                            domains.setdefault(name, {"company": RENAME.get(company, company), "category": ours,
+                            domains.setdefault(name, {"company": display_name(company), "category": ours,
                                                       "source": "disconnect"})
     return domains
 

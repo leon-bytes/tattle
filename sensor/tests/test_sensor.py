@@ -292,7 +292,7 @@ def test_names_that_are_not_plain_host_names_are_refused_and_counted(rig, labels
     assert wait_for(lambda: rig.backend.malformed == 2 and rig.backend.events)
     assert rig.upstream.seen == ["example.com"]  # the odd name never left the box
     assert [e["qname"] for e in rig.backend.events] == ["example.com"]  # and never reached the backend
-    assert rig.sensor.malformed == 0
+    assert wait_for(lambda: rig.sensor.malformed == 0)  # handed over; the sensor clears its count once the backend has answered
 
 
 def test_ordinary_unusual_names_still_resolve(rig):

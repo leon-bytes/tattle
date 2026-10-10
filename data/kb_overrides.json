@@ -1,5 +1,5 @@
 {
-  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Four groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), phone-only SDK hosts the web-centred Disconnect list lacks, and the own servers of a few well-known apps seen in live tests (vendor: Netflix, Discord, OpenAI). Everything else unknown is left to the AI classifier.",
+  "about": "Hand fixes that win over data/kb.json, for a name and everything under it. Four groups: Apple's own system domains (vendor, with its ad services called out), big CDNs and hosting (content), phone-only SDK hosts the web-centred Disconnect list lacks, and the own servers of a few well-known apps seen in live tests (vendor: Netflix, Discord, OpenAI; Reddit's media hosts, as content like reddit.com in the list). Everything else unknown is left to the AI classifier.",
   "domains": {
     "apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
     "push.apple.com": {"company": "Apple", "category": "vendor", "source": "override"},
@@ -34,6 +34,8 @@
     "firebaselogging-pa.googleapis.com": {"company": "Google", "category": "analytics", "source": "override"},
     "firebaseinstallations.googleapis.com": {"company": "Google", "category": "analytics", "source": "override"},
     "crashlyticsreports-pa.googleapis.com": {"company": "Google", "category": "analytics", "source": "override"},
+    "app-analytics-services.com": {"company": "Google", "category": "analytics", "source": "override"},
+    "app-ads-services.com": {"company": "Google", "category": "advertising", "source": "override"},
     "an.facebook.com": {"company": "Meta", "category": "advertising", "source": "override"},
     "applvn.com": {"company": "AppLovin", "category": "advertising", "source": "override"},
     "appsflyersdk.com": {"company": "AppsFlyer", "category": "advertising", "source": "override"},
@@ -57,6 +59,8 @@
     "openai.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
     "chatgpt.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
     "oaistatic.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
-    "oaiusercontent.com": {"company": "OpenAI", "category": "vendor", "source": "override"}
+    "oaiusercontent.com": {"company": "OpenAI", "category": "vendor", "source": "override"},
+    "redd.it": {"company": "Reddit", "category": "content", "source": "override"},
+    "redditmedia.com": {"company": "Reddit", "category": "content", "source": "override"}
   }
 }

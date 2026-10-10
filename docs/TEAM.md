@@ -35,7 +35,7 @@ test iPhone --Wi-Fi--> THE BOX (Linux laptop)
                        |- sensor: our DNS resolver (records the name, blocks, forwards to upstream)
                        |     | POST /api/events          ^ GET /api/blocklist (every 1 s)
                        |     v                           |
-                       |- backend (FastAPI :8000, in a VM on the laptop) -- kb.json lookup -- AI on AMD notebook (optional) -- Postgres (provided)
+                       |- backend (FastAPI :8000, in a VM on the laptop) -- kb.json lookup -- AI on the AMD server, through an SSH tunnel (optional) -- Postgres (provided)
                        |     | WebSocket /ws
                        |     v
                        '- frontend (React, served by the backend) --> laptop screen
@@ -47,9 +47,9 @@ test iPhone --Wi-Fi--> THE BOX (Linux laptop)
 
 ## Owners
 
-- **BOX**: hotspot, sensor, `box/` scripts, backend core (events, kb lookup, state, WebSocket, Postgres).
+- **BOX**: hotspot, sensor, `box/` scripts, backend core (events, kb lookup, state, WebSocket, Postgres), privacy labels for the demo apps (`data/labels/`, moved from AI on Saturday afternoon).
 - **FRONT**: the React app. Live bubble graph, device panel, block buttons, session controls, How-it-works view.
-- **AI**: AMD notebook and model server, `backend/app/ai.py`, `tools/build_kb.py` and `data/kb*.json`, privacy labels for demo apps, visual identity (palette, type), pitch diagram.
+- **AI**: the model server on the AMD server, `backend/app/ai.py`, `tools/build_kb.py` and `data/kb*.json`, visual identity (palette, type), pitch diagram.
 
 Each owner edits only their own folders. Shared files: this doc, `docs/PITCH.md`, `docs/CHALLENGES.md`, `.gitignore`, `README.md`.
 
@@ -210,7 +210,23 @@ async def label_check(label: dict, stats: dict) -> str | None   # stretch
 - **The live demo never waits on AI.**
 - Config comes from `.env`: `AI_BASE_URL`, `AI_TOKEN`, `AI_MODEL` (OpenAI-compatible `/chat/completions`).
 
+**The model server** (set up by AI; recorded here by BOX)
+
+- Hardware: the AMD server has an AMD Radeon PRO W7900 (gfx1100, 48 GB of video memory), 128 cores and 503 GB of memory, and runs Ubuntu 24.04.
+- Software: Ollama, listening on `127.0.0.1:11434` on that server only, with no API key. Its protection is that nothing outside the server can reach it except through SSH.
+- From the machine the backend runs on, it is reached through an SSH tunnel (`amd` is the SSH name of the server there, with key authentication):
+
+  ```
+  ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd
+  ```
+
+  `-N`: no remote command, only the tunnel. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama's port on the server. `ServerAliveInterval=30`: notice a dead connection within about a minute. `ExitOnForwardFailure=yes`: stop at once if the port cannot be forwarded, instead of sitting there uselessly.
+- Backend `.env`: `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` (a placeholder; Ollama ignores it), `AI_MODEL=<model>`.
+- **Added by BOX:** `health` carries `"ai_endpoint"`: `true` or `false` for "the model server answers at `AI_BASE_URL`" (checked every 15 s with a request to `/models`), or `null` when no `AI_BASE_URL` is set. It is about the server and the tunnel. `health.ai` stays what it was: whether the last call made by `ai.py` worked.
+
 ### Privacy labels (stretch): `data/labels/<app-slug>.json`
+
+Written by BOX from each app's App Store label (text or screenshots).
 
 ```json
 {"app": "<app name>", "source_url": "<App Store link>", "checked": "<date>",
@@ -372,8 +388,8 @@ tools/               fake_sensor.py (replays events into the backend), build_kb.
 2. **Sensor as resolver** (BOX).
    - Pass: redirected lookups reach the sensor, and blocking a domain stops it working on the iPhone.
    - Fallback: capture only, from the hotspot's own DNS, with no blocking.
-3. **AMD model server reachable from a laptop** (AI).
-   - Pass: a request to `<hub>/user/<hub-username>/proxy/<port>/v1/models` with an API token works.
+3. **AMD model server reachable from the backend's machine** (AI).
+   - Pass: with the SSH tunnel up, `curl http://127.0.0.1:8081/v1/models` answers, and `health.ai_endpoint` is `true`.
    - Fallback: template summaries plus AI answers precomputed in the notebook and saved to `data/ai_cache_seed.json`.
 4. **Provided Postgres reachable from a laptop over a phone hotspot** (AI).
    - Fallback: Postgres in a container on the box. We keep the feature but probably lose the track.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import http.client
 import importlib
 import importlib.util
 import os
@@ -9,6 +10,7 @@ import re
 import secrets
 import sys
 import time
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -39,6 +41,7 @@ DB_READ_TIMEOUT = 5.0  # seconds a history request may take
 LABEL_AI_SECONDS = 10.0  # at most one AI label verdict per session this often
 MAX_BLOCKED = 500     # blocked companies plus domains; the sensor fetches the list every second
 MAX_CLIENTS = 50      # WebSocket clients at once
+AI_PROBE_SECONDS = 15.0  # how often the model server is asked whether it is there
 
 
 def load_ai():
@@ -78,6 +81,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(classify_worker()))
     if db:
         tasks.append(asyncio.create_task(db.run()))
+    if env.get("AI_BASE_URL"):
+        tasks.append(asyncio.create_task(watch_ai_endpoint(env["AI_BASE_URL"], env.get("AI_TOKEN"))))
     yield
     for task in tasks:
         task.cancel()
@@ -106,6 +111,28 @@ def db_health(ok: bool, problem: str | None) -> None:
     if (state.health["db"], state.health["db_error"]) != (ok, problem):
         state.health.update(db=ok, db_error=problem)
         hub.publish([{"type": "health", **state.health}])
+
+
+def ai_endpoint_answers(base_url: str, token: str | None) -> bool:
+    """One small request to the model server's list of models (the OpenAI-style API has one at /models).
+    A placeholder token is fine: a server that needs none, such as Ollama, ignores it."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # straight there, whatever proxy variables say
+    try:
+        request = urllib.request.Request(base_url.rstrip("/") + "/models",
+                                         headers={"Authorization": f"Bearer {token}"} if token else {})
+        with opener.open(request, timeout=3) as response:
+            return response.status == 200
+    except (OSError, ValueError, http.client.HTTPException):  # unreachable, refused, or not a URL at all
+        return False
+
+
+async def watch_ai_endpoint(base_url: str, token: str | None) -> None:
+    """Keep health.ai_endpoint current: is the model server reachable (for us: is the SSH tunnel up)?
+    Independent of ai.py: it shows a dead tunnel even before any AI call is made. Runs in a thread,
+    so a server that hangs never holds up the live loop."""
+    while True:
+        set_health("ai_endpoint", await asyncio.to_thread(ai_endpoint_answers, base_url, token))
+        await asyncio.sleep(AI_PROBE_SECONDS)
 
 
 async def db_ready() -> None:

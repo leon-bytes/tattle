@@ -39,6 +39,8 @@ Rules for the answers:
 
 ## 2. How the backend calls it
 
+- **Reaching the model.** Ollama on the AMD server listens on that server's `127.0.0.1:11434` only and has no key. The backend's machine reaches it through an SSH tunnel: `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd`. With that running, `.env` holds `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` (a placeholder: send it or not, Ollama ignores it) and `AI_MODEL=<model>`. Quick check: `curl http://127.0.0.1:8081/v1/models`.
+- **`health.ai_endpoint`.** The backend asks `AI_BASE_URL` for its model list every 15 s and shows the result as `health.ai_endpoint` (the `ai endpoint` pill on `/debug`). It tells you the server and tunnel are up, even before `ai.py` exists. `health.ai` is separate: whether your last call worked.
 - **Import.** At startup the backend imports `app.ai`. If the file is missing, or the import fails (a missing package, a typo), it prints one line and runs without AI. Config comes from the environment: `AI_BASE_URL`, `AI_TOKEN`, `AI_MODEL`.
 - **Packages.** `backend/requirements.txt` has no HTTP client. Add what you import (for example `httpx`) to that file.
 - **`classify_domains`.** A background task looks once a second for names nobody knows, takes up to 10, and makes one call at a time. Names are exact host names, lowercase. The hit is already on screen as `unknown`; your answer upgrades it and is broadcast as a `classified` message.
@@ -106,7 +108,7 @@ python3 tools/build_kb.py     # downloads Disconnect's list, rewrites data/kb.js
 - The note at the top of `tools/build_kb.py` lists what v1 decided and what deserves a second look.
 - Restart the backend to load changes. `health.kb` shows how many domains it read.
 
-**Privacy labels:** one file per demo app, `data/labels/<app-slug>.json`, hand-entered from the App Store page:
+**Privacy labels** are written by BOX now (moved on Saturday afternoon); you only need the shape, because `label_check` receives one. One file per demo app, `data/labels/<app-slug>.json`, entered from the App Store page:
 
 ```json
 {"app": "Demo Game", "source_url": "<App Store link>", "checked": "<date>",

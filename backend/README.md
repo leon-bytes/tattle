@@ -132,6 +132,8 @@ Then on `/debug`: pick the device, "Persist on/off", start a session, stop it, a
 | `LABELS_DIR` | `data/labels` | App Store privacy labels for the label check |
 | `DATABASE_URL` | (none) | Postgres connection string; unset means no database |
 | `AI_MODEL` | (none) | used as the `by` name on AI summaries and stored with cached AI answers |
+| `AI_BASE_URL` | (none) | the model server, for `ai.py`. If set, the backend also checks every 15 s whether it answers and shows that as `health.ai_endpoint`. With the SSH tunnel: `http://127.0.0.1:8081/v1` |
+| `AI_TOKEN` | (none) | for `ai.py`. `unused` is fine for a server without a key |
 
 The backend reads environment variables only, not `.env` itself. To load `.env` into a shell: `set -a; . ./.env; set +a` (`set -a` exports everything the file defines).
 

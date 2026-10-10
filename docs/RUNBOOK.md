@@ -25,12 +25,14 @@ The clock starts at the host's desktop. Steps 2 to 4 are typed on the host in th
 | 3 | Host | `sudo bash box/box-up.sh <wifi-interface>` and type the hotspot password (it may take up to half a minute) | `HOTSPOT: … runs on <interface>` with `10.42.0.1/24`, and `INTERNET: the normal Wi-Fi … is on <interface>` |
 | 4 | Host, own terminal | `sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000` | `sensor: listening on …`, later `backend: connected` |
 | 5 | VM, terminal | `bash backend/start.sh` | `Tattle backend starting.` and the addresses |
+| 5a | VM, own terminal, only if the AI is used | `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd` | no output; within 15 s the `ai endpoint` pill on `/debug` turns green |
 | 6 | Host, browser | open `http://<vm-ip>:8000/` and press F11 | the page; the sensor pill turns green |
 | 7 | iPhone | unlock it; it joins `Tattle-Demo` | "Device 1" appears within seconds |
 | 8 | Page | press Wipe | an empty screen, ready for the judge |
 
 - Steps 3 and 4 belong together: between them, phones on the hotspot have no DNS.
 - Step 5 can be done while steps 2 to 4 run. The sensor waits for the backend and loses nothing.
+- Step 5a is the SSH tunnel to the model server (Ollama on the AMD server, which listens on its own `127.0.0.1` only). `-N`: no remote command. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama. `ServerAliveInterval=30`: notice a dead connection. `ExitOnForwardFailure=yes`: stop at once if port 8081 is taken. It needs `AI_BASE_URL=http://127.0.0.1:8081/v1` and `AI_TOKEN=unused` in `.env`. Check by hand: `curl http://127.0.0.1:8081/v1/models`. The demo works without it.
 - To show blocking: block the company, then have the app closed and opened again. A block stops new connections, not ones already open.
 - "box self-test" on the page is the laptop's own test lookup, not a phone.
 - For the history view: after the Wipe, mark our own phone as `persist` (on `/debug`), then start the session. Never a judge's phone.
@@ -55,6 +57,7 @@ Other failures:
 | FRONT's page is broken or missing | `http://<vm-ip>:8000/present` on the big screen (companies, counter, summary), `http://<vm-ip>:8000/debug` on the laptop for Start, Block and Wipe. |
 | The backend stopped | `bash backend/start.sh` again. The screen starts empty, like after a Wipe; the sensor reconnects by itself and delivers what it queued. |
 | The sensor stopped | Step 4 again. Phones recover by themselves within seconds. |
+| The `ai endpoint` pill is red | The tunnel dropped: step 5a again. Meanwhile unknown names stay "unknown" and the summary is the built-in one. Don't mention it unless asked. |
 | The phone joined but shows nothing | Is cellular data off? Does the sensor's terminal say `backend: connected`? Otherwise: replay mode. |
 | An OpenSnitch prompt appears | Allow, "forever". Lookups stall until it is answered. |
 

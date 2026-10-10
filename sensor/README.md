@@ -55,7 +55,7 @@ If `9.9.9.9` is unreachable from your network (some networks only allow their ow
 - **Backend down:** lookups keep working with the last blocklist. Up to 5000 events wait in memory, oldest dropped first, and are delivered when the backend is back.
 - **Privacy:** query names are never printed or written unless `--debug` or `--record` is given. Normal output is two start lines and "backend connected / unreachable".
 - **Device names are off by default.** Without `--names` the sensor never opens the lease file, and the backend shows "Device 1", "Device 2". Use `--names` for our own phones only.
-- **`--record`** replaces device names with `Test iPhone A`, `B`, … before writing. Use a `.raw.jsonl` name (git-ignored) until the file has been looked over.
+- **`--record`** replaces device names with `Test iPhone A`, `B`, … before writing. Host names are written as they are, so the file has to be looked over before it joins the repo: use a `.raw.jsonl` name (git-ignored) until then. The whole procedure is in `box/README.md`, "Recording a replay from our own phone".
 
 ## Tests
 

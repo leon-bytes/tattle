@@ -58,7 +58,8 @@ class State:
     def __init__(self, kb: Kb) -> None:
         self.kb = kb
         self.health: dict = {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": len(kb),
-                             "malformed": 0}  # names refused by the sensor or here; counted, never kept
+                             "malformed": 0,       # names refused by the sensor or here; counted, never kept
+                             "ai_endpoint": None}  # does the model server answer? None: no AI_BASE_URL set
         self.blocklist_version = 1
         self.generation = 0  # bumped by wipe, so late AI answers for wiped data are dropped
         self.ai_seed: dict[str, dict] = {}  # answers from the seed file and the database's ai_cache; survives wipe

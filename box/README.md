@@ -1,6 +1,6 @@
 # The box: hotspot and sensor on the host laptop
 
-> **Hardware test passed** (Saturday, about 14:00): with `box-up.sh` and the real sensor, a real iPhone on `Tattle-Demo` showed up live on `/debug`. It took three runs. Run 1: NetworkManager would not manage `tattle0` (fixed with its own MAC address and a wait). Run 2: forcing the normal Wi-Fi back onto the real interface failed (fixed by no longer forcing which interface does which job). Run 3 passed. Not confirmed yet on hardware: that a block visibly stops an app (the first try looked broken, see "Things to know"), `box-down.sh` after a hotspot that really ran, and the items under "Still unproven" at the end.
+> **Hardware test passed** (Saturday afternoon): with `box-up.sh` and the real sensor, a real iPhone on `Tattle-Demo` shows up live on `/debug`, and blocking a company stops that company's lookups on the phone. It took three runs to get the hotspot up. Run 1: NetworkManager would not manage `tattle0` (fixed with its own MAC address and a wait). Run 2: forcing the normal Wi-Fi back onto the real interface failed (fixed by no longer forcing which interface does which job). Run 3 passed. What is still unproven is listed at the end of this page.
 
 ## What runs where
 
@@ -57,6 +57,39 @@ Afterwards: Ctrl+C in the sensor's terminal, then `sudo bash box/box-down.sh` (r
 - **Which interface is the hotspot is decided at run time.** Either `tattle0` or the real Wi-Fi interface, whichever NetworkManager leaves free; the other carries the internet. Both layouts work. `box-up.sh` says which is which at the end, and the firewall rules follow the hotspot interface. Wherever this page says `<hotspot-interface>`, use the name from the `HOTSPOT:` line.
 - **`tattle0` gets its own MAC address,** `02:00:00:00:00:01` (a "locally administered" address, the kind reserved for made-up interfaces). With the card's own address, which it would inherit, NetworkManager refused to manage it. To use another one: `sudo AP_MAC=02:00:00:00:00:02 bash box/box-up.sh <wifi-interface>`.
 - **The password** is asked for by the script. `PASSWORD=…` in the environment also works but lands in the shell history.
+
+## Recording a replay from our own phone
+
+A replay is our safety net for the demo. Record one from our own phone only, with nobody else on the hotspot.
+
+1. On the phone, close the other apps. Unblock everything on the page (a recording made while something is blocked replays as blocked).
+2. Stop the running sensor (Ctrl+C) and start it again with `--record`:
+
+   ```sh
+   sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000 --record <app-slug>.raw.jsonl
+   ```
+
+   - `--record <file>`: also write every lookup to this file, one line each. The screen works as usual meanwhile.
+   - The file appears in the folder the command is run from (the one that holds `sensor/` and `box/`). It is appended to, so delete an old one first.
+   - The sensor prints `RECORDING events to …` so it cannot be left on by accident.
+3. Open the demo app, use it for about two minutes, then Ctrl+C. Start the sensor again without `--record`.
+4. What is already anonymous in the file: the device name. Every phone is written as "Test iPhone A", "Test iPhone B", …, even with `--names`.
+   What is **not**: the host names. The file holds every lookup of every device on the hotspot during those minutes, including the phone's background apps (mail, bank, messenger, a work profile) and the laptop's own test lookup. It also holds the real time of each lookup and the hotspot addresses (`10.42.0.x`), which say nothing about anyone.
+5. Copy the file into the repo in the VM as `data/replays/<app-slug>.raw.jsonl`. Names ending in `.raw.jsonl` are ignored by git, so it cannot be committed before it has been looked at.
+6. Look at it, in the VM:
+
+   ```sh
+   grep -o '"qname": "[^"]*"' data/replays/<app-slug>.raw.jsonl | sort | uniq -c | sort -rn     # every name in the file, most frequent first
+   ```
+
+   Then write the cleaned copy, leaving out what does not belong to the demo app or the phone's system:
+
+   ```sh
+   grep -v -e '"client_ip": "127.0.0.1"' -e 'some-other-app.example' data/replays/<app-slug>.raw.jsonl > data/replays/<app-slug>.jsonl
+   ```
+
+   - `grep -v -e … -e …`: keep every line except those containing one of the given texts. The first one drops the laptop's own lookups; add one `-e` per name to drop.
+7. Try it: `python3 tools/fake_sensor.py data/replays/<app-slug>.jsonl`. Delete the `.raw.jsonl` when the clean file is right.
 
 ## A fixed address for the VM (optional, once)
 
@@ -118,10 +151,11 @@ Proven by the test that passed:
 - An iPhone joins `Tattle-Demo` with the narrow input rules (DHCP, DNS, 5300) and has working internet.
 - Its lookups reach the sensor through the redirect, and the sensor answers them.
 - The sensor on the laptop reaches the backend in the VM while the hotspot is up, and `/debug` shows the phone live.
+- **Blocking works on the phone.** Blocked the company AppsFlyer, force-quit Reddit, reopened it about 15 s later: new `appsflyersdk.com` lookups arrived as blocked (the counter went to 4) and Reddit kept working. The 10 s answer-lifetime cap made the block take hold without airplane mode or waiting.
+- The laptop's own test lookup shows as "box self-test" and is not counted: with one phone joined, the page shows 1 device.
 
 Still unproven:
 
-- That a block visibly stops an app on the phone. The first try was before the answer-lifetime cap and looked broken.
 - `box-down.sh` taking down a hotspot that really ran, and NetworkManager then reconnecting the normal Wi-Fi on the real interface.
 - That port 853 is really rejected and that phones really cannot reach the VM's network (the rules are in place; nobody has tried to get past them).
 - Device names from the lease file (`--names`).

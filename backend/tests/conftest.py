@@ -17,3 +17,4 @@ def fixture_kb(monkeypatch):
     monkeypatch.setenv("LABELS_DIR", str(FIXTURES / "labels"))
     monkeypatch.delenv("AI_MODEL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)  # tests never touch a database unless they ask for one
+    monkeypatch.delenv("AI_BASE_URL", raising=False)   # nor a model server
