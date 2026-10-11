@@ -1,4 +1,4 @@
-### Tattle: who is your phone talking to?
+# Tattle: who is your phone talking to?
 
 Hand someone a phone, they open an app, and a screen fills with every company that app quietly contacts: live, in plain English, with one click to block one.
 
@@ -12,13 +12,13 @@ Tattle is a laptop that acts as a Wi-Fi hotspot. A phone joins it, with nothing 
 
 The screen shows the phone in the middle and one bubble per company around it, coloured and tagged by what the company does: advertising, analytics, social, fingerprinting, content delivery, or the app's own servers. A click on a bubble opens a panel that says who the company is and lists every server name the phone asked for. One more click blocks the company: we answer "that name does not exist", the app cannot reach it, and a counter shows the app trying again and again while it keeps working.
 
-# Who it helps
+### Who it helps
 
 Anyone who wants to know what an app really does and has no time for packet captures. The tools that show this today are buried in settings, show raw server names, or need installing and configuring. Tattle takes a minute and reads like a sentence. From our simulated test session: "In 58 seconds, Demo Game contacted 14 companies: 9 advertising, 1 analytics, 1 social, and 3 others."
 
 ## How we built it
 
-# Tech stack: 
+### Tech stack: 
 - **Hotspot:** Linux, NetworkManager, a virtual access-point interface on the laptop's one Wi-Fi card, `iptables` for the DNS redirect.
 - **Resolver ("sensor"):** Python, one file, one dependency (`dnslib`).
 - **Backend:** Python, FastAPI, WebSocket, state in memory. Optional Postgres for the history of our own test phones.
@@ -27,7 +27,7 @@ Anyone who wants to know what an app really does and has no time for packet capt
 - **AI:** an open-source model served by Ollama on an AMD Radeon PRO W7900 through ROCm, reached over an SSH tunnel. 
 - **Tests:** 101 backend tests, 35 resolver tests, and a 21-step end-to-end check that runs without Wi-Fi.
 
-# AI tools we used:
+### AI tools we used:
 - **In the product:** Ollama (open source, on the AMD GPU) names the servers no list knows, writes the session summary and explains each company in the detail panel. The screen never waits for it and labels its answers as guesses.
 
 ## Challenges we ran into
@@ -62,7 +62,7 @@ Anyone who wants to know what an app really does and has no time for packet capt
 - A standalone box (for example a Jetson or Raspberry Pi) that anyone can plug in at home
 - Explanations that work offline with a smaller on-device model
 
-Tattle is a laptop acting as a Wi-Fi hotspot. It answers the phone's DNS lookups, so it sees each server name (never content), maps names to companies with a tracker list and an open-source LLM, and blocks by answering "that name doesn't exist".
+  
 
 - Team plan, interfaces and run steps: [docs/TEAM.md](docs/TEAM.md)
 - Demo script and talking points: [docs/PITCH.md](docs/PITCH.md)
