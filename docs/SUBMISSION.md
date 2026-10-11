@@ -1,18 +1,18 @@
 # Submission text (draft)
 
-Written on Saturday evening, at feature lock. Everything under "The text" is meant to be pasted into the submission form, section by section. It contains no names, no school and no location.
+Written on Saturday evening, at feature lock; the AI lines and the test counts were brought up to date on Sunday 07:15. Everything under "The text" is meant to be pasted into the submission form, section by section. It contains no names, no school and no location.
 
 ## Before pasting: check these
 
-The text is true as of Saturday 19:45. These points can change before the deadline; each is marked in the text with `<…>` or named here.
+The text is true as of Saturday 19:45, and its AI lines as of Sunday 07:15. These points can change before the deadline; each is marked in the text with `<…>` or named here.
 
 - `<team name>`, `<repository link>`, `<video link>`: fill in.
-- **AI paragraph and tech stack:** as of now the model module (`backend/app/ai.py`) is not written and the model server lists no model. The text says so. If the module lands, replace the marked sentence with the "once the model is live" variant below it and fill in `<model>`.
+- **AI paragraph and tech stack:** brought up to date on Sunday 07:15. The model module (`backend/app/ai.py`) is in and was run against the live model on replayed traffic; it has **not** been seen with a real phone's traffic, and the text says so in one marked sentence: delete that sentence once it has. Check two things with the AI owner before pasting: how the model is licensed (the text says "open-weights", not "open source"), and that the model really runs through ROCm (from the backend's side we only measured the speed, and that the model sits in the graphics card's memory).
 - `<other AI tools the team used>`: this draft only knows the tool used for the hotspot, sensor, backend and screen. Add what was used for the AI part and the diagram.
 - **Privacy-label check:** no label files exist yet, so the text lists it under limitations. If labels for the demo apps are added, move that sentence up.
 - **Database:** the history store is built and tested against a local Postgres, not yet connected to the organizers' one. Change the sentence if that happens.
 - **Replay:** the only replay is simulated traffic. Change the sentence if a real session is recorded.
-- Test counts (101 backend, 35 sensor, 21 end-to-end checks): re-run before pasting if code changed.
+- Test counts (127 backend, 35 sensor, 21 end-to-end checks, counted on Sunday 08:30): re-run before pasting if code changed.
 - Length: about 1,200 words in all, 270 in the longest section. If the form has one field with a limit, "What it is" and "How it works" together are the core (about 340 words).
 
 ---
@@ -49,16 +49,15 @@ Tested with a real iPhone on the real hotspot: its lookups appeared live, and bl
 - **Backend:** Python, FastAPI, WebSocket, state in memory. Optional Postgres for the history of our own test phones.
 - **Screen:** plain HTML, CSS and JavaScript. No framework, no build step, nothing loaded from the internet.
 - **Tracker data:** Disconnect's tracking-protection list (CC BY-NC-SA 4.0), about 4,400 domains, plus 65 hand-written entries.
-- **AI:** an open-source model served by Ollama on an AMD Radeon PRO W7900 through ROCm, reached over an SSH tunnel. <As submitted: the backend's side is built and tested with a stand-in; the model module is not finished.>
-- **Tests:** 101 backend tests, 35 resolver tests, and a 21-step end-to-end check that runs without Wi-Fi.
+- **AI:** Qwen2.5 14B Instruct, an open-weights model (4-bit quantized), served by Ollama on an AMD Radeon PRO W7900 through ROCm and reached over an SSH tunnel. About 40 tokens a second; an answer takes 2 to 4 seconds.
+- **Tests:** 127 backend tests, 35 resolver tests, and a 21-step end-to-end check that runs without Wi-Fi.
 
 ### AI tools we used
 
 - **Claude Code** wrote most of the hotspot scripts, the resolver, the backend and the screen, working from our decisions and our hardware tests. We ran every hardware test ourselves: an AI assistant cannot see a Wi-Fi card.
 - <other AI tools the team used>
-- **In the product:** an open-source model is meant to name the servers no list knows, write the session summary and explain a company in the detail panel. The screen never waits for it and labels its answers as guesses. <As submitted: this part runs against a stand-in only.>
+- **In the product:** Qwen2.5 14B, an open-weights model on the AMD GPU, names the servers no list knows, writes the session summary, words the privacy-label verdict and explains each company in the detail panel. The screen never waits for it and labels its answers as guesses. The model words things and our code decides them: counts and shares are worked out before the model sees them, and a sentence with a number it was not given, with a claim that data was sent, or drifting out of English is thrown away. <As submitted: tried on replayed traffic and on 76 real server names; not yet seen with a real phone.>
 
-*Once the model is live, use instead:* "In the product, <model> (open source, on the AMD GPU) names the servers no list knows, writes the session summary and explains each company in the detail panel. The screen never waits for it and labels its answers as guesses."
 
 ### Challenges and what we learned
 
@@ -67,6 +66,7 @@ Tested with a real iPhone on the real hotspot: its lookups appeared live, and bl
 - **Blocking looked broken.** We blocked an app's server and a message still went through. DNS blocking only acts when the phone asks for a name; it had the answer already and kept a connection open. Shortening every answer's lifetime to 10 seconds made blocks take hold at the app's next connection.
 - **The tracker list is written for websites.** Phone-only advertising servers and the phone maker's own servers were missing, and one social network's servers showed up under its parent company. We found these by reading live lookups, not by tests.
 - **A looked-up name is untrusted input.** A phone can ask for a name made of markup. We resolve and show plain host names only; anything else is refused and counted.
+- **The model wrote well and still broke our rules.** Its server answers one request at a time, so a seven-second answer made the next click run out of time; it "corrected" a percentage we had given it; it ended an English sentence in Chinese. We ask for shorter answers, do the arithmetic ourselves, and check every sentence before it reaches the screen.
 - **The screen was built in the last three hours** before feature lock, as a plain page instead of the planned framework app: no build to forget before the demo.
 
 What we learned: the capture trick is old and simple. The work is in everything around it, and most of what was wrong could only be seen on a real phone.
@@ -78,7 +78,7 @@ What we learned: the capture trick is old and simple. The work is in everything 
 - An app that uses its own encrypted DNS to an unknown server, connects straight to an address, or reuses an answer it already had, gets past us.
 - A block stops new connections, not ones already open.
 - The backend has no login. Phones on the hotspot are firewalled away from it, and requests from other websites are refused; a product would need more.
-- Categories come from a list; a name no list knows shows as "Not identified" unless the model names it, and that is a guess.
+- Categories come from a list; a name no list knows shows as "Not identified" unless the model names it, and that is a guess. In our try with 76 real server names, 5 of its guesses named the wrong company.
 - Comparing an app's lookups with its App Store privacy label is built, but we have no label files for real apps yet.
 - The history of past sessions is stored but has no screen yet.
 - The fallback replay is simulated traffic, not a recording of a real phone.

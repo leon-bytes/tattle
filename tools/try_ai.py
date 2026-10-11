@@ -151,7 +151,7 @@ async def main() -> None:
     elif (result := await call(module, "explain_company", COMPANY[0], COMPANY[1], list(COMPANY[2]))) is not BROKEN:
         check_text("explain_company", result)
         if isinstance(result, str) and len(result.strip()) > 500:
-            say(None, f"explain_company wrote {len(result.strip())} characters: the backend cuts it at 500. Two or three sentences.")
+            say(None, f"explain_company wrote {len(result.strip())} characters: the backend cuts it at 500. A short paragraph.")
 
     print("RESULT: " + ("the backend can use this module" if not failures else f"{failures} problem(s) to fix"))
     sys.exit(1 if failures else 0)

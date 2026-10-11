@@ -31,7 +31,8 @@ await summarize({"device": "Test iPhone A", "label": "Demo Game", "seconds": 27,
 await explain_company("Unity", "advertising",
                       ["auction.unityads.unity3d.com", "outcome-ssp.supersonicads.com", "webview.unityads.unity3d.com",
                        "logs.ironsrc.mobi", "config.unityads.unity3d.com", "init.supersonicads.com"])
-# must return two or three plain sentences: who the company is, and what it is most likely doing in this app,
+# must return a short plain paragraph (usually three to five sentences, 500 characters at most): who the company is,
+# what kinds of servers the app contacted, and what it most likely uses them for,
 # judging by the server names. For example:
 "Unity makes a game engine and runs one of the big ad networks for mobile games. The names contacted here are its ad auction and ad display servers, so this app most likely shows Unity ads."
 ```
@@ -49,7 +50,7 @@ Rules for the answers:
 
 - **Reaching the model.** Ollama on the AMD server listens on that server's `127.0.0.1:11434` only and has no key. The backend's machine reaches it through an SSH tunnel: `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd`. With that running, `.env` holds `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` (a placeholder: send it or not, Ollama ignores it) and `AI_MODEL=<model>`. Quick check: `curl http://127.0.0.1:8081/v1/models`.
 - **`health.ai_endpoint`.** The backend asks `AI_BASE_URL` for its model list every 15 s and shows the result as `health.ai_endpoint` (the `ai endpoint` pill on `/debug`). It tells you the server and tunnel are up, even before `ai.py` exists. `health.ai` is separate: whether your last call worked.
-- **`AI_MODEL` has to be the name Ollama lists.** The same request tells the backend whether `AI_MODEL` is in the server's list (`health.ai_model`, the `model` pill on `/debug`). If it is not, the screens say "AI: no model". The demo VM's `.env` has `AI_MODEL=qwen2.5:14b`: pull exactly that (`ollama pull qwen2.5:14b`), or tell BOX the name you chose. On Saturday 20:05 the server listed no model at all.
+- **`AI_MODEL` has to be the name Ollama lists.** The same request tells the backend whether `AI_MODEL` is in the server's list (`health.ai_model`, the `model` pill on `/debug`). If it is not, the screens say "AI: no model". On Sunday 06:30 the server listed one model, `qwen2.5-14b:latest` (a model file imported under that name, not `qwen2.5:14b`), and the demo VM's `.env` now says exactly that. If you load another model, tell BOX its name.
 - **If the tunnel is refused:** the server's SSH server needs `AllowTcpForwarding local` in `/tmp/amd-oneclick-sshd_config`, and a container restart probably resets it. The steps, and a way round that needs no forwarding, are in `docs/RUNBOOK.md` ("If the tunnel stops working").
 - **Import.** At startup the backend imports `app.ai`. If the file is missing, or the import fails (a missing package, a typo), it prints one line and runs without AI. Config comes from the environment: `AI_BASE_URL`, `AI_TOKEN`, `AI_MODEL`.
 - **Packages.** `backend/requirements.txt` has no HTTP client. Add what you import (for example `httpx`) to that file.
@@ -139,3 +140,45 @@ python3 tools/build_kb.py     # downloads Disconnect's list, rewrites data/kb.js
 - `GET /api/label-check` puts the label next to what the session contacted and gives a one-line verdict. It matches the session's app name against `app` or the file name, and re-reads the files on every call, so no restart is needed.
 - The verdict rules: "no data collected" but tracking companies contacted is a mismatch; nothing under "Data Used to Track You" but advertising companies contacted is a mismatch; otherwise consistent.
 - Whatever your functions return is shown as plain text and trimmed (company 80 characters, summary 600, label verdict 400, company explanation 500). Don't return markup.
+
+## 6. Where `ai.py` stands (Sunday 07:15), and what BOX changed in it
+
+Your file was tried against the live model before it went in. It parsed every answer and its wording filter worked. What follows was measured, then changed. Your structure, your names and your seed mechanism are kept.
+
+**Measured on the server** (`qwen2.5-14b:latest`, through the tunnel):
+
+- About 40 tokens a second. Requests are answered **one at a time**: two at once took 2.9 s and 5.0 s.
+- A model that is not loaded takes about 5 s to load. Ollama unloads it after 5 idle minutes.
+- Your file, ten names in one `classify_domains` call: 5.9 to 7.3 s. The limit is 8 s.
+- Now: ten names 3.5 to 4.7 s; `explain_company` 1.7 to 4.0 s (median 2.4 s, 39 companies); `summarize` and `label_check` about 2 s.
+- A burst of 30 unknown names with four company panels opened meanwhile: 29 names classified within 18 s, every explanation within 6 s, the backend's own answers in 2 to 9 ms throughout.
+- 76 real server names the list lacks: all answered; 5 named the wrong company.
+
+**What was changed, and why:**
+
+1. **The model's name.** `DEFAULT_MODEL` was `qwen2.5:14b`; the server lists `qwen2.5-14b:latest`. Every call got "404 Not Found".
+2. **The `.env` loading at import was removed.** `python-dotenv` *is* installed in the backend's venv (the web server brings it), so importing the module put the whole `.env` into the process: every test run and every backend started by hand would have used the real model server, and later the database. Settings come from the environment; `backend/start.sh` reads `.env`.
+3. **`keep_alive: "12h"` in every request**, so the model stays loaded (see the 5 s above).
+4. **`classify_domains` asks for one line per name** (`number|company|category|confidence`, the names numbered) instead of a JSON object. Under half the tokens, and a cut-off answer still yields its complete lines. `_parse_json_object` went; `_clean_entry` stayed and also reads "ad networks" as `advertising` and "cdn" as `content`, and drops a company name that is "-", "none" or not in Latin letters.
+5. **One 8 s limit for the whole of `classify_domains`**, however many chunks of 10 it takes (it was 8 s per chunk). Entries that are not text are skipped.
+6. **The classify prompt** says which words are categories, how to spell the big companies (Google, Apple, Meta, Amazon, Microsoft, as our list does), that a name under an app's own domain is `vendor`, and gives a worked example with made-up names.
+7. **`summarize` gets plain lines instead of the stats as JSON**, with the shares already worked out ("advertising 58 (60%)") and our categories in plain words ("the phone maker's or the app's own servers", never "vendor"). A sentence with a number that was not in those lines is rejected: the model wrote "39 of 42 (93%)" where it had been given 40 of 42 (95%). With no company to name the model is not asked. The phone's name (`stats["device"]`) is no longer sent to the server.
+8. **`label_check`: the module decides which way the verdict goes**, by the backend's rules, and the model words it. With the rules only in the prompt, the model said "does not match" for a label that matched, and once added a note about its own word count. The same number check applies.
+9. **The `explain_company` prompt** gives the three sentences their jobs, makes the second begin with "The app contacted" plus real server names, asks for 45 words, and has one worked example (a company that is not in the demo). Apple's system servers get a note that these are the phone's own lookups. Before, most answers repeated the prompt's own example list ("ad auctions, ad display, analytics").
+10. **The check of every text is per sentence now.** Kept: your pattern for "sent your data". Added: "tracks you", "your location" and the like; the label's section title "Data Used to Track You" is allowed. A sentence that fails loses its guess if its fact can be kept ("The app contacted x, most likely for sending usage data" becomes "The app contacted x."), otherwise it is dropped. Dropped too: a sentence with letters from another script (one answer ended in Chinese), a sentence cut off by `max_tokens`, anything after a blank line. A text without the word "contacted" is `None`.
+11. **Small things:** the seed path follows `AI_CACHE_SEED_PATH`; the log line for a failed call names the error (a timeout has no text); `max_tokens` lowered to match the shorter answers; line endings are now Unix ones.
+
+**Added later on Sunday morning (08:15 to 08:45), asked for by BOX and from what the demo's uplink showed:**
+
+12. **`explain_company` answers more fully.** The prompt now says what a lookup is, lists the kinds of servers a name can point to (ad auction, ad server, measurement, settings, logs and crashes, sign-in, content delivery, an app's own API) and asks what the app most likely uses them for. The model judges the length: usually three or four sentences, 300 to 450 characters. `max_tokens` is 140.
+13. **The connection into the tunnel is kept open between calls** (`_post_tunnel`). With the demo's uplink (a tethered phone), opening a new connection through the tunnel took 0.9 to 1.8 s per call; a call on an open one takes about 0.45 s. A kept connection that has died gets one retry on a new one; a timeout gets none. Other addresses are called as before.
+14. **An answer cut off by `max_tokens` loses its unfinished sentence** (`finish_reason`). A host name's dot had made a cut-off sentence look finished.
+15. **The wording check also catches the passive form** ("where usage data are sent").
+
+Measured at 08:20 with all of this, on the tethered uplink, while the live backend was using the model too: `explain_company` 2.2 to 4.0 s, median 3.1 s (13 companies). Of that, the model itself takes 1.4 to 2.5 s.
+
+**Left as it was, for you to decide:** `status()`, `model_name()` and `template_summary()` are not called by anything in the repo (the last one names `tools/build_seed.py`, which is not here). The seed file's three extra keys are written down in `docs/TEAM.md`.
+
+**Known weak spots:** the model names a wrong company with confidence now and then (5 of 76 above), and confidence is almost always 0.9 or 0.6, so it says little. Explanations of analytics companies tend to say "tracking usage". Nothing was tried with a real phone's traffic yet.
+
+Tests for the parts that need no model: `backend/tests/test_ai.py`.

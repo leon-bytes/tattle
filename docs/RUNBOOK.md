@@ -4,7 +4,7 @@ One page for the walk to the judges' table. Details and troubleshooting are in `
 
 Placeholders, fill them in once and keep this page open: `<vm-name>` (the VM in libvirt), `<vm-ip>` (its `192.168.122.x` address), `<wifi-interface>` (from `iw dev`).
 
-Re-checked on Saturday evening (last at 20:15) against what exists. Marked **(untried)** where a step has not been done on the real laptop yet.
+Re-checked on Saturday evening (last at 20:15) against what exists; the AI parts again on Sunday 07:15, against the live model. Marked **(untried)** where a step has not been done on the real laptop yet.
 
 ## Done once, before the day
 
@@ -12,7 +12,7 @@ These are not part of the two minutes. Without them the two minutes don't hold.
 
 - VM: `backend/.venv` exists (backend/README.md). The show screen at `/` needs no build: it is the plain files in `frontend/`.
 - VM: a backend that was started before the last change to `backend/app/` or to the knowledge base still runs the old code. Stop it and start it again (step 2). Files in `frontend/` need only a reload of the page.
-- VM, only for the AI or the database: a `.env` in the repo root (copy `.env.example`, fill in). `start.sh` reads it when the backend starts, so it has to be there before step 2. Without `.env` the backend runs with no AI and no database, and the demo works. The demo VM has one since Saturday evening: the AI lines, no database.
+- VM, only for the AI or the database: a `.env` in the repo root (copy `.env.example`, fill in). `start.sh` reads it when the backend starts, so it has to be there before step 2. Without `.env` the backend runs with no AI and no database, and the demo works. The demo VM has one since Saturday evening: the AI lines, no database. Since Sunday morning its `AI_MODEL` is `qwen2.5-14b:latest`, the name the server lists.
 - Host: copies of `sensor/` and `box/` in one folder, and `sensor/.venv` exists (box/README.md, step 5).
 - Host: OpenSnitch has lasting allow rules for the sensor (DNS to `9.9.9.9`, HTTP to `<vm-ip>` port 8000).
 - Host: the VM's address is pinned (box/README.md, "A fixed address for the VM"), so `<vm-ip>` never changes.
@@ -50,7 +50,9 @@ The clock starts at the host's desktop. Steps 4 to 6 are typed on the host, in t
 
 **Step 3, the tunnel to the model server.** Ollama on the AMD server listens on its own `127.0.0.1` only; the tunnel makes it appear as port 8081 in the VM. `-N`: no remote command. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama. `ServerAliveInterval=30`: notice a dead connection. `ExitOnForwardFailure=yes`: stop at once if port 8081 is taken. It needs `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` and `AI_MODEL=<model>` in `.env`. Check by hand: `curl http://127.0.0.1:8081/v1/models` (`curl` fetches the address and prints the answer).
 
-- Where this stands (Saturday 20:15): the tunnel works and `curl` gets an answer through it, but Ollama lists **no model yet**, and `backend/app/ai.py` does not exist. The demo VM has a `.env` with the three lines above and `AI_MODEL=qwen2.5:14b`; the model pulled on the server has to carry exactly that name.
+- **After the tunnel is up, run the AI check once, before the walk to the table** (10 to 15 s): `set -a; . ./.env; set +a; backend/.venv/bin/python tools/try_ai.py`. `set -a` exports what `.env` defines to the commands that follow; `set +a` switches that off again. It calls the four AI functions against the live model the way the backend does and has to end with `RESULT: the backend can use this module`. It also makes the server load the model into the graphics card's memory, which takes about 5 s, most of the 8 s one AI call may take; from then on every call asks the server to keep it loaded for 12 hours. Skipping this costs at most the first AI answer after a long pause.
+- Where this stands (Sunday 07:15): `backend/app/ai.py` is in the repo, the server lists the model as `qwen2.5-14b:latest`, and `.env` has that name. A test copy of the backend on another port, fed by the replay, showed "AI: on", servers named by the AI, an explanation in the detail panel 2 to 3 s after the click, an AI label verdict and an AI summary. **A backend started before Sunday 07:15 has none of this:** it loads `ai.py` and reads `.env` only when it starts (step 2). Not yet seen with a real phone's traffic.
+- If AI answers stay away although the chip says "AI: on" or flips to "AI: off" now and then: the model server answers one request at a time, so a call that waits behind others can run out of its 8 s. The screen keeps its own sentence then, and the next call that works turns the chip back on. Nothing to do during a demo.
 - What the screens say about the AI. The chip top right on the show screen and the first AI pill on `/debug` show the same three states:
   - **"AI: off"**: there is no `ai.py`, or the model server does not answer (tunnel down). Also while `ai.py` is there but none of its calls has worked yet. `/debug` adds the reason in brackets.
   - **"AI: no model"** (amber): the server answers, but `AI_MODEL` is not in its list of models. Pull the model on the server, or correct the name in `.env` and restart the backend.
@@ -95,9 +97,9 @@ curl http://127.0.0.1:8081/v1/models
 - The remote command is `exec 3<>/dev/tcp/127.0.0.1/11434; cat <&3 & cat >&3; kill $!`: the server's shell (bash) opens a connection to Ollama itself and two `cat`s copy in both directions; `kill $!` stops the first `cat` when the request is over.
 - **Why not `nc`:** the plan was `ssh amd nc 127.0.0.1 11434`, but the server has no `nc` (and no `socat`). With `nc` installed there (`apt-get install -y netcat-openbsd`; gone again after a container restart, **untried**) the remote command can simply be `nc 127.0.0.1 11434`. `ssh -W` would not help: it is port forwarding too.
 - `ControlMaster=auto`, `ControlPath=…`, `ControlPersist=600`: the first connection opens one SSH connection and keeps it for ten minutes after its last use; every later one travels inside it instead of logging in again. `%C` makes the file name unique per server. `BatchMode=yes`: never stop to ask for a password.
-- The `curl` line is not only a check: the first request takes about 4 s (it opens the shared connection), longer than the backend's 3-second check waits. After it, a request took about 0.9 s, against 0.5 s through the tunnel.
+- The `curl` line is not only a check: the first request takes about 4 s (it opens the shared connection), about half of what the backend's check waits (8 s since Sunday; it was 3 s). After it, a request took about 0.9 s, against 0.5 s through the tunnel.
 - To stop: `Ctrl`+`C`, then `ssh -O exit -o ControlPath=~/.ssh/tattle-amd-%C amd` closes the shared connection.
-- **Tested** on Saturday 20:07 on a spare port, with requests for the model list only. **Not tested:** a long model answer through it (there is no model yet), and many requests at once (the server allows 10 commands per SSH connection).
+- **Tested** on Saturday 20:07 on a spare port, with requests for the model list only. **Not tested:** a long model answer through it (there is a model since Sunday; the relay was not tried again with it), and many requests at once (the server allows 10 commands per SSH connection).
 
 Measured in the VM: `backend/start.sh` answers requests about a second after Enter. The whole sequence has **not been timed** on the real hardware yet.
 

@@ -43,3 +43,23 @@ Thumbs.db
 # local tool state
 .claude/
 CLAUDE.md
+
+# internal notes: a local file only, never published
+docs/PROJECT-GUIDE.md
+
+# secrets in other shapes
+.env.local
+.env.bak
+.env.backup
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# recordings of real traffic wherever the sensor wrote them, screen recordings of a demo, database dumps
+*.raw.jsonl
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.dump

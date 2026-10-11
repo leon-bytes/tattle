@@ -26,7 +26,7 @@ The box is one laptop running two things: the hotspot and the sensor on the lapt
 - The iPhone shows "Private Relay is turned off for this network": expected, tap "use without Private Relay".
 - Press `W` twice on the show screen (wipe), so it starts empty. The phone then shows as "Device 1" under the phone in the middle.
 - For the history view: mark our phone as `persist` (on `/debug`, in a second tab) after the wipe and before starting the session. Never a judge's phone.
-- Top right of the show screen: "live" and "sensor: live" are green. "AI: off" or "AI: no model" is fine; the demo still works without the model and without the database.
+- Top right of the show screen: "live" and "sensor: live" are green. With the tunnel up, "AI: on" turns green once the phone has looked up a name no list knows. "AI: off" or "AI: no model" is fine too: the demo works without the model and without the database.
 - Backup: the replay ready to start in the VM (`python3 tools/fake_sensor.py data/replays/<file>.jsonl --loop`), backup video on the second laptop (and on a phone).
 
 ## Script (~3:30)
@@ -78,7 +78,7 @@ Hand over the iPhone: "Open <demo app> and just use it like normal."
 
 - **Hotspot or sensor dies:** say "Switching to a recording from earlier today with our own phone", start `fake_sensor` with the replay, and carry on. The UI looks identical. (Until we record our own phone, the only replay is `demo-synthetic.jsonl`, which is made-up traffic: say "a simulated session" then.)
 - **Everything dies:** play the backup video, then keep talking over the architecture diagram.
-- **AI down:** the template summary shows instead. Don't mention it unless asked.
+- **AI down:** the template summary shows instead.
 
 ## Technical talking points (everyone should be able to say these)
 
@@ -119,8 +119,10 @@ About 4,400 domains from Disconnect's open tracking-protection list, plus our ow
 - Background traffic from the phone can mix in. We mark the phone's own OS servers as "vendor".
 
 **AI**
-- Model: <model>, served with <llama.cpp/vLLM> on ROCm on the AMD <GPU> cloud node.
-- It classifies names no list knows (shown as "AI guess") and writes the summary.
+- Model: Qwen2.5 14B Instruct (open weights, 4-bit quantized), served by Ollama on the AMD Radeon PRO W7900. Measured from our backend: about 40 tokens a second, an answer in 2 to 4 seconds.
+- It classifies names no list knows (shown as "AI guess"), writes the summary, words the label verdict and explains a company in the detail panel.
+- The model words things, our code decides them: counts, shares and the label verdict are worked out before the model sees them, and every sentence is checked before it reaches the screen (English, no claim that data was sent).
+- Honest number: of 76 real server names our list lacks, it answered all and named the wrong company for 5.
 - Its answers are cached, and the demo never waits on it.
 
 **Data**
@@ -145,13 +147,6 @@ About 4,400 domains from Disconnect's open tracking-protection list, plus our ow
 - C: AI and data
 - Everyone: our AI tools and our challenges (from `docs/CHALLENGES.md`)
 
-## Submission: before the repo goes public
+## Submission
 
 The submission text is drafted in `docs/SUBMISSION.md`, with a list at its top of what to check before pasting.
-
-If the submission needs a public repository, or before this one is opened up:
-
-- [ ] Make a **fresh** public repository from a clean copy of the project, with a new history. Deleting a file later is not enough: it stays in the old history.
-- [ ] Leave `docs/PROJECT-GUIDE.md` out of that copy and list it in the public repository's `.gitignore`. It is an internal team document. Remove the links to it in `README.md` and `docs/TEAM.md` as well.
-- [ ] Until then, do not add it to this repository's `.gitignore`: it has to keep reaching the whole team.
-- [ ] Re-check every file for personal information and secrets: `.env` files, tokens, IP addresses, MAC addresses, names.

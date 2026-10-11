@@ -44,6 +44,7 @@ MAX_EXPLAINED = 500   # company explanations remembered until the next wipe
 MAX_BLOCKED = 500     # blocked companies plus domains; the sensor fetches the list every second
 MAX_CLIENTS = 50      # WebSocket clients at once
 AI_PROBE_SECONDS = 15.0  # how often the model server is asked whether it is there
+AI_PROBE_TIMEOUT = 8.0   # as long as one AI call may take: on a slow uplink, opening a connection through the tunnel took over 2 s
 
 
 def load_ai():
@@ -139,7 +140,7 @@ def ask_ai_endpoint(base_url: str, token: str | None, model: str | None) -> tupl
     try:
         request = urllib.request.Request(base_url.rstrip("/") + "/models",
                                          headers={"Authorization": f"Bearer {token}"} if token else {})
-        with opener.open(request, timeout=3) as response:
+        with opener.open(request, timeout=AI_PROBE_TIMEOUT) as response:
             if response.status != 200:
                 return False, None
             body = response.read(1_000_000)

@@ -226,7 +226,7 @@ async def explain_company(company: str, category: str, domains: list[str]) -> st
 - **Added by BOX:** the backend calls all three. `label_check` is optional: if it exists, its sentence becomes the verdict of the label endpoint below. How the calls are made is in `docs/AI-QUICKSTART.md`.
 - **Added by BOX: `explain_company` (optional).** The show screen's detail panel asks `GET /api/explain` (above) when someone clicks a company. If the function exists, the backend calls it in the background and shows its text in place of the tracker list's sentence.
   - It gets the company's name, the category it was mostly contacted for, and up to 20 of its server names from this session, most looked up first: `("AppLovin", "advertising", ["ms.applovin.com", "rt.applovin.com"])`.
-  - It returns two or three plain sentences: who this company is, and what it is most likely doing in this app, judging by those server names. Plain text, no markup. Say "contacted"; never claim that data was sent: we see names, not content.
+  - It returns a short plain paragraph (it was "two or three sentences" until Sunday morning; now the model judges the length, usually three to five sentences): who this company is, what kinds of servers the app contacted, and what the app most likely uses them for, judging by those server names. Plain text, no markup. Say "contacted"; never claim that data was sent: we see names, not content.
   - Same rules as the others: answer within 8 s, return `None` on any failure, never raise. The backend cuts the text at 500 characters, keeps it until the next wipe or session, and asks once per company (again 15 s after a failure, if the panel is opened again).
 
 `data/ai_cache_seed.json` (**proposed by BOX, AI owner may change**): precomputed answers, loaded at startup if the file exists.
@@ -238,6 +238,16 @@ async def explain_company(company: str, category: str, domains: list[str]) -> st
 - Same fields as a `classify_domains` answer, keyed by the exact host name (no walking up the name). The kb is asked first; a seeded name then shows with `source: "ai"`, is never sent to the model, and survives a wipe.
 - **The live demo never waits on AI.**
 - Config comes from `.env`: `AI_BASE_URL`, `AI_TOKEN`, `AI_MODEL` (OpenAI-compatible `/chat/completions`).
+
+**Added by BOX on Sunday morning: `ai.py` is in the repo, and what it adds to this contract** (the four functions and their rules are unchanged)
+
+- `backend/app/ai.py` is the AI owner's module, adjusted by BOX after trying it against the live model. What was changed, and why, is in `docs/AI-QUICKSTART.md`, section 6.
+- **The model server answers one request at a time**, at about 40 tokens a second. A call that waits behind another one still has only its 8 s. So answers are kept short: `classify_domains` asks the model for one line per name (`number|company|category|confidence`) instead of a JSON object, which takes about 4 s for ten names instead of 7.
+- **The module decides, the model words.** Shares in the summary are worked out in code, and a sentence containing a number the model was not given is thrown away. For `label_check` the module applies "the rules" of the label check (below) itself and tells the model which way the verdict goes, so the AI's sentence cannot contradict the `level` on screen.
+- **What is sent to the model server:** names no list knows (`classify_domains`); a company's name, category and server names (`explain_company`); the app name and the counts (`summarize`, `label_check`), plus the label's lists. The phone's name in `stats["device"]` is not sent.
+- **Every text is checked before it is returned:** whole sentences only, English only (the model can drift into Chinese), no sentence claiming that data was sent, and the word "contacted" has to be in it. Otherwise the function returns `None` and the backend keeps its own sentence.
+- **Every call asks Ollama to keep the model loaded for 12 hours** (`keep_alive`, Ollama's own field in the request). Loading takes about 5 s, most of the 8 s limit, and by default Ollama unloads a model after 5 idle minutes. The very first call after Ollama starts can still be late: run `tools/try_ai.py` once before the demo (`docs/RUNBOOK.md`).
+- **The seed file, as `ai.py` reads it.** Besides `domains` (which the backend reads too), the module looks for three more top-level keys: `explanations` (`{"<company name in lowercase>": "<text>"}`), and `summaries` and `label_checks` (keyed by a hash of the stats, made by `ai._stats_key`). No file with these keys exists, and the tool the module names for writing them (`tools/build_seed.py`) is not in the repo. The module takes the file's path from `AI_CACHE_SEED_PATH`, like the backend.
 
 **The model server** (set up by AI; recorded here by BOX)
 
@@ -256,7 +266,7 @@ async def explain_company(company: str, category: str, domains: list[str]) -> st
   - `"ai_module"`: `true` when the backend loaded an `ai.py`.
   - `"ai_model"`: `true` or `false` for "`AI_MODEL` is in the model server's list of models" (the same request to `/models`; a model pulled without a tag counts under `<name>:latest`), or `null` when there is no `AI_MODEL`, no answer, or a list that cannot be read.
   - `"ai_state"`: the one word the pages show, `"off"`, `"no-model"` or `"on"`. Checked in this order: no `ai.py`, or `ai_endpoint` is `false`: `"off"`. `ai_endpoint` is `true` and `ai_model` is `false`: `"no-model"`. `ai` is `true`: `"on"`. Otherwise (an `ai.py` none of whose calls has worked yet): `"off"`.
-  - Why: the show screen said "AI: on" as soon as the endpoint answered, with no model and no `ai.py`. For the AI owner: the name in `AI_MODEL` has to be the one Ollama lists (the demo VM uses `qwen2.5:14b`).
+  - Why: the show screen said "AI: on" as soon as the endpoint answered, with no model and no `ai.py`. For the AI owner: the name in `AI_MODEL` has to be the one Ollama lists (since Sunday the server lists `qwen2.5-14b:latest`, and the demo VM's `.env` says exactly that).
 
 ### Privacy labels (stretch): `data/labels/<app-slug>.json`
 
@@ -342,7 +352,6 @@ docs/FRONT-QUICKSTART.md  run the backend with replayed traffic; real examples o
 docs/AI-QUICKSTART.md     what ai.py must expose and how the backend calls it
 docs/RUNBOOK.md           cold laptop to demo-ready in two minutes, and the switch to replay mode
 docs/SUBMISSION.md        draft of the submission text, with what to check before pasting it
-docs/PROJECT-GUIDE.md     the whole project in one self-contained file, for pasting into an AI chat
 sensor/              DNS resolver that runs on the box (the laptop itself, not the VM)
 box/                 scripts to bring the hotspot up/down on the box (Linux + NetworkManager)
 backend/app/         FastAPI app (main, kb lookup, state, db, ai), plus two plain pages: /debug (operator console) and /present (fallback view)
