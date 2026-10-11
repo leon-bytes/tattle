@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/assets/tattle-lockup-1024.png" alt="Tattle" width="420">
+</p>
+
 # Tattle
 
 **Who is your phone talking to?** Hand someone a phone, they open an app, and a screen fills with every company that app quietly contacts: live, in plain English, with one click to block one.

@@ -9,6 +9,8 @@ The judge-facing screen, served by the backend at `/`. Plain HTML, CSS and JavaS
 | `app.js` | everything live: the WebSocket, the bubble layout, the detail panel with blocking, the operator keys |
 | `assets/tattle-architecture.png` | the diagram behind "How it works" (a copy of `docs/tattle-architecture.png`) |
 | `assets/fonts/` | Inter (variable, latin), SIL Open Font License, with its license text |
+| `assets/tattle-logo.svg`, `tattle-logo-512.png`, `tattle-logo-1024.png` (and `…-dark.png`) | the header's turtle as standalone files, for use outside the page: transparent, or on the page's dark background (`#0b1020`). The page itself does not load them: its logo is the drawing in `index.html` |
+| `assets/tattle-lockup.svg`, `tattle-lockup-1024.png`, `tattle-lockup-1024-dark.png` | the turtle with the word "Tattle" beside it. The word is light, as in the header, so the transparent versions are for dark backgrounds. The SVG carries the Inter font inside it and keeps the word as text |
 
 ## See it
 

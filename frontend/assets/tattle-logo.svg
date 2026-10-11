@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-labelledby="t">
+  <title id="t">Tattle</title>
+  <g fill="#34d399">
+    <circle cx="32" cy="9" r="7"/>
+    <ellipse cx="11" cy="21" rx="8" ry="5" transform="rotate(-35 11 21)"/>
+    <ellipse cx="53" cy="21" rx="8" ry="5" transform="rotate(35 53 21)"/>
+    <ellipse cx="13" cy="52" rx="7" ry="4.5" transform="rotate(35 13 52)"/>
+    <ellipse cx="51" cy="52" rx="7" ry="4.5" transform="rotate(-35 51 52)"/>
+    <path d="M28 55 L32 63 L36 55 Z"/>
+  </g>
+  <circle cx="32" cy="36" r="21" fill="#141b2d" stroke="#38bdf8" stroke-width="4"/>
+  <path d="M32 36 L32 15 A21 21 0 0 1 50.2 25.5 Z" fill="#38bdf8" opacity="0.45"/>
+  <circle cx="32" cy="36" r="11" fill="none" stroke="#38bdf8" stroke-width="2.5"/>
+  <circle cx="32" cy="36" r="3.5" fill="#f2f5fb"/>
+  <circle cx="42" cy="27" r="2.8" fill="#f2f5fb"/>
+</svg>
