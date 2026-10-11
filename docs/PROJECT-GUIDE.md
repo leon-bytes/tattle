@@ -2,7 +2,7 @@
 
 # Tattle: project guide
 
-**Last updated: Saturday 2026-10-10, 19:45 local time.**
+**Last updated: Saturday 2026-10-10, 20:14 local time.**
 
 ## Note to an AI reader
 
@@ -325,7 +325,6 @@ Everything lives in one repository. `backend/app/ai.py` does not exist yet.
 README.md                 what it is, privacy, credits, where to start
 .env.example              the settings, with placeholders; copy to .env (never committed)
 .gitignore
-test.txt                  a leftover dummy file, not used by anything
 docs/TEAM.md              the interface contract between the three roles
 docs/PITCH.md             demo script, pre-demo checklist, talking points
 docs/CHALLENGES.md        log of problems, fixes and AI tools
@@ -425,7 +424,8 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 - **Company explanation:** `GET /api/explain` describes one company for the detail panel (7.6a). It answers at once with a sentence built from the knowledge base. If the AI module has `explain_company`, the backend asks it in the background and hands out its text from the next call on. One text per company, phone and session is kept in memory (500 at most) until the next wipe; after a failed call the model is asked again 15 s later at the earliest.
 - **Wipe:** clears devices, hits, blocks, the session, the summary, company explanations and AI answers from memory, and deletes the running session's rows from the database. It does not delete finished sessions.
 - **AI is optional:** if `app/ai.py` is missing or fails to import, the backend runs without it. Its calls happen in background tasks with a 10 s limit; a failure only sets `health.ai` to false.
-- **Health:** broadcast every 5 s and whenever it changes. If `AI_BASE_URL` is set, the backend also asks the model server for its list of models every 15 s and reports whether it answered as `ai_endpoint`: that shows a dead tunnel before any AI call is made.
+- **Health:** broadcast every 5 s and whenever it changes. If `AI_BASE_URL` is set, the backend also asks the model server for its list of models every 15 s and reports whether it answered as `ai_endpoint` (that shows a dead tunnel before any AI call is made) and whether the model named in `AI_MODEL` is in that list as `ai_model`.
+- **The AI's state in one word:** `health.ai_state` is `off`, `no-model` or `on`, and it is the only thing the pages show about the AI. The rule, checked in this order: there is no `ai.py`, or the model server does not answer: `off`. The server answers but does not list our model: `no-model`. The last call of `ai.py` worked: `on`. Anything else, which means an `ai.py` none of whose calls has worked yet: `off`. Until Saturday 20:15 the show screen lit "AI: on" as soon as the endpoint answered, which was true of the tunnel and false of the AI.
 - **Memory bounds:** last 5,000 hits; 500 names waiting for the AI; 5,000 remembered AI answers; 500 company explanations; 256 devices; 50 WebSocket clients, each allowed to fall 2,000 messages behind before it is dropped.
 
 **Settings** (environment variables; the backend does not read `.env` itself, `start.sh` does):
@@ -437,11 +437,11 @@ A single Python process (FastAPI on uvicorn, port 8000). Everything captured liv
 | `AI_CACHE_SEED_PATH` | `data/ai_cache_seed.json` | optional precomputed AI answers |
 | `LABELS_DIR` | `data/labels` | privacy label files |
 | `DATABASE_URL` | none | Postgres connection string; unset means no database |
-| `AI_MODEL` | none | shown as the author of AI-written sentences |
+| `AI_MODEL` | none | shown as the author of AI-written sentences, and looked for in the model server's list of models (it has to be the name the server uses, such as `qwen2.5:14b`) |
 | `AI_BASE_URL` | none | the model server's address, used by `ai.py`. If set, the backend checks every 15 s that it answers. With the SSH tunnel: `http://127.0.0.1:8081/v1` |
 | `AI_TOKEN` | none | used by `ai.py`. Ollama needs no key, so the placeholder `unused` is fine |
 
-**Tests:** `backend/tests/`, 115 tests with a Postgres available (101 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the company explanation, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
+**Tests:** `backend/tests/`, 117 tests with a Postgres available (103 without; the database tests skip). They cover the knowledge base, every state rule, the whole HTTP and WebSocket surface, the label check, the company explanation, the database layer against a real Postgres in a container, and the security rules (section 11). The AI module is replaced by a stand-in in tests.
 
 ### 6.4 Database layer (optional): `backend/app/db.py`, `backend/sql/schema.sql`
 
@@ -507,14 +507,14 @@ The page the judges look at, full screen on the laptop, while one of them uses t
   - **What is blocked right now**, as a large badge: "BLOCKED" (red), "2 OF 7 BLOCKED" (amber) or "NOT BLOCKED", with one line of explanation ("A block stops new connections: close the app and open it again.") and the button "Block <company>", which becomes "Unblock <company>".
   - **Every server name** the phone asked for under that company, most looked up first: its own category tag, the name, how many times it was asked for, when it was last seen ("12 s ago", counting on), and its state: "open", "BLOCKED · refused ×4" (refused means: the phone asked and we answered "does not exist"), or "refused ×4 earlier" for a name that was blocked and is open again. Each row has its own Block or Unblock button; a blocked row is tinted red with the name struck through. While the whole company is blocked the row buttons are hidden, because a single name cannot be let through then.
   - A long server name is shortened in its front part and never at its end, because the last two parts of a name say whose server it is: `telemetry.puzzle-garden-game.example` may shrink to "teleme…puzzle-garden-game.example", never the other way round. The front part is shown dimmer. The full name appears when the pointer rests on it. Names are inserted as text only.
-  - "Not identified" opens the same panel: the names no list knows, each with a Block button of its own, and "AI guess: analytics" under a name where the AI gave a category but no company. (A name the AI can put a company to leaves this bubble and joins that company's.) Its text says what happens to these names: that the AI is asked about each one, or, when the last call to the AI module did not work or there is no module, that no AI is answering and they stay unidentified.
+  - "Not identified" opens the same panel: the names no list knows, each with a Block button of its own, and "AI guess: analytics" under a name where the AI gave a category but no company. (A name the AI can put a company to leaves this bubble and joins that company's.) Its text says what happens to these names: that the AI is asked about each one, or, unless the AI's state is `on`, that no AI is answering and they stay unidentified.
   - It closes with `Esc`, with its Close button, or with a click outside it. Its text is sized for one to two metres: at 1920x1080 the explanation is 28 pixels high and the rows 24.
 - **On the bubbles.** A blocked company's bubble is grey with a dashed outline and a struck-through name, and its count becomes "blocked ×N", which keeps climbing as the app keeps trying. A company with only some names blocked keeps its colour and gets a dashed outline.
 - **Counters** (right): companies contacted (large); how many of them are advertising and how many analytics; seconds into the session; blocked attempts; hidden-traffic attempts.
 - **"In plain words":** the backend's summary sentence, with "written by <model>" when the AI wrote it.
 - **"App Store privacy label":** appears when a label file matches the session's app name. It shows "DOES NOT MATCH" or "CONSISTENT" (word and colour), the verdict sentence, the rule-based sentence under it when the AI wrote the verdict, and what the label says. The page asks `GET /api/label-check` when a session starts or stops and every 4 seconds while one is on screen.
 - **"Live: what the phone asks for":** the latest server names, newest first, each with its tag and company; refused ones are struck through. It makes the step from raw name to company visible. It gives way to the label card when there is one, because both do not fit.
-- **Top right:** "live" or "reconnecting…" (the WebSocket), "sensor: live" or "sensor: silent" (whether the sensor's heartbeat is moving), "AI: on" or "AI: off" (`health.ai_endpoint` or `health.ai`), and buttons for the two overlays.
+- **Top right:** "live" or "reconnecting…" (the WebSocket), "sensor: live" or "sensor: silent" (whether the sensor's heartbeat is moving), the AI chip, and buttons for the two overlays. The AI chip shows `health.ai_state` (section 6.3): "AI: on" in green, "AI: no model" in amber, or "AI: off". `/debug` shows the same three, adds the reason to "off" ("no ai.py", "endpoint down", "last call failed, or none yet"), and has two more pills, `ai endpoint` and `model`, with a tick or a cross.
 - **The privacy banner** at the bottom, always: "Reads server names only, never content. Nothing is kept after you leave."
 - **Overlays:** "How it works" (the architecture diagram with one sentence under it) and the operator panel (choose the phone, type the app name, start, stop, wipe).
 
@@ -536,7 +536,7 @@ The page the judges look at, full screen on the laptop, while one of them uses t
 
 **The feature-lock run** (Saturday 19:30 to 19:45, same set-up, replay four times faster than real): the whole demo path once, by keyboard and real mouse clicks. Start a session with `S`, a name and Enter; stop it; start a second one. Open a company's panel with the stand-in AI (the list's sentence, then the AI's text) and with no AI module at all. Block a company and watch every row turn to "BLOCKED" and "refused ×N" climb; unblock it. Block and unblock one server name ("1 OF 6 BLOCKED", the bubble's outline dashed). Block and unblock a name in "Not identified". Wipe with `W` `W`. Kill the backend with a panel open and start it again: the page says "reconnecting…", comes back within seconds and starts empty, without a session. `/debug` and `/present` load. One look at 1440x900. Three things were wrong and are fixed (section 17, 19:40): a second session by keyboard got the new app name glued to the old one; the panel's sentence could contradict its own header; the "Not identified" panel said the AI was being asked when there was none.
 
-**Known weak points.** The architecture image has small text that is hard to read from two metres, and it was drawn before this screen existed (its "Browser" box does not mention it). The look has not been reviewed by the AI owner. There is no history view (the `/api/history/…` endpoints have no screen yet) and the `malformed` count is not shown here (it is on `/debug`). In the detail panel, the sentence from the list only knows a company's category, so it is thin ("an advertising company") until an AI text replaces it; and an AI text is written once per company and session, from the server names seen at that moment, and is not refreshed when more names arrive. Seen in the feature-lock run and left as they are: on a bubble with a three-word name, the tag "OWN · AI guess" wraps and is cut by the circle's edge (still readable); the panel's rows keep their order while the pointer is on the list, and since the panel opens under the pointer that is often the case, so "most looked up first" can be out of date (the counts are not); the chip "AI: on" also lights up when only the tunnel answers and no AI module is loaded; the operator panel's Phone list is rebuilt at every update, which may make it fiddly to choose between two phones with the mouse (**unverified**, a real browser's drop-down cannot be driven by our scripted one; `/debug` can start the session instead).
+**Known weak points.** The architecture image has small text that is hard to read from two metres, and it was drawn before this screen existed (its "Browser" box does not mention it). The look has not been reviewed by the AI owner. There is no history view (the `/api/history/…` endpoints have no screen yet) and the `malformed` count is not shown here (it is on `/debug`). In the detail panel, the sentence from the list only knows a company's category, so it is thin ("an advertising company") until an AI text replaces it; and an AI text is written once per company and session, from the server names seen at that moment, and is not refreshed when more names arrive. Seen in the feature-lock run and left as they are: on a bubble with a three-word name, the tag "OWN · AI guess" wraps and is cut by the circle's edge (still readable); the panel's rows keep their order while the pointer is on the list, and since the panel opens under the pointer that is often the case, so "most looked up first" can be out of date (the counts are not); the operator panel's Phone list is rebuilt at every update, which may make it fiddly to choose between two phones with the mouse (**unverified**, a real browser's drop-down cannot be driven by our scripted one; `/debug` can start the session instead).
 
 ### 6.8 Not built yet
 
@@ -592,7 +592,8 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 {"type":"snapshot","devices":[{"device_id":"10.42.0.23","name":"Test iPhone A","persist":true}],
  "hits":[ …hit messages… ],"blocked":{"companies":[],"domains":[],"covers":{}},
  "session":null,"last_session":null,"summary":null,
- "health":{"db":false,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4486,"malformed":0,"ai_endpoint":null}}
+ "health":{"db":false,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4486,"malformed":0,
+           "ai_endpoint":null,"ai_model":null,"ai_module":false,"ai_state":"off"}}
 
 {"type":"device","device_id":"10.42.0.23","name":"Device 1","persist":false}
 
@@ -609,7 +610,8 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 {"type":"session","session":{"device_id":"10.42.0.23","label":"Demo Game","started":1760070000.0}}
 {"type":"session","session":null}
 
-{"type":"health","db":true,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4486,"malformed":0,"ai_endpoint":null}
+{"type":"health","db":true,"db_error":null,"ai":false,"sensor_seen":1760070000.0,"kb":4486,"malformed":0,
+ "ai_endpoint":true,"ai_model":false,"ai_module":true,"ai_state":"no-model"}
 
 {"type":"wiped"}
 ```
@@ -622,7 +624,7 @@ The page only listens. The first message is a `snapshot` of everything so far; t
 - `summary`: about every 3 s while a session runs and new hits arrived, once when it stops, and again if the AI writes a better one. `by` is `"template"` or the model's name.
 - `device.name` is never empty. A device whose `device_id` is a loopback address (`127.0.0.1`, `::1`) is the box testing itself, named "box self-test": leave it out of device lists and counts.
 - `blocked.covers` says, for each blocked company, which names the block covers. Each name also covers everything under it. An empty list means no domain of that company is known, so nothing is blocked. A blocked single domain covers itself and its subdomains only.
-- `health.sensor_seen`: when the sensor last called in; older than about 10 s means it is gone. `kb`: how many domains are loaded (0 means the file is missing). `db_error`: `null`, or why the database is unusable. `malformed`: names refused since the backend started. `ai`: whether the last call made by `ai.py` worked. `ai_endpoint`: whether the model server answers at `AI_BASE_URL` (`null` if none is set); it is about the server and the tunnel, not about `ai.py`.
+- `health.sensor_seen`: when the sensor last called in; older than about 10 s means it is gone. `kb`: how many domains are loaded (0 means the file is missing). `db_error`: `null`, or why the database is unusable. `malformed`: names refused since the backend started. `ai`: whether the last call made by `ai.py` worked. `ai_endpoint`: whether the model server answers at `AI_BASE_URL` (`null` if none is set); it is about the server and the tunnel, not about `ai.py`. `ai_model`: whether `AI_MODEL` is in that server's list of models (`null` when there is no `AI_MODEL`, no answer, or a list that cannot be read; a model pulled without a tag is listed as `<name>:latest` and counts). `ai_module`: whether the backend loaded an `ai.py`. `ai_state`: `"off"`, `"no-model"` or `"on"`, worked out from the others by the rule in section 6.3; pages show this one and need not look at the rest. The last three were added on Saturday after feature lock; nothing that existed changed.
 - `wiped`: forget everything shown. An empty `blocked` and a `null` session follow.
 
 ### 7.6 Screens → backend: REST
@@ -731,7 +733,30 @@ ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure
 
 - `-N`: no remote command, only the tunnel. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama's port on the server. `ServerAliveInterval=30`: notice a dead connection. `ExitOnForwardFailure=yes`: stop at once if the port cannot be forwarded. `amd` is the SSH name of the server on the backend's machine (key authentication).
 - The backend's `.env` then holds `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` (a placeholder; Ollama ignores it) and `AI_MODEL=<model>`. `ai.py` reads all three from the environment.
-- `health.ai_endpoint` turns `true` once the tunnel is up and Ollama answers. Checked on Saturday 19:39 from the backend's VM, without the tunnel: `ssh amd` works with the key, and Ollama on the server answers the request for its list of models with an **empty list**: no model has been pulled yet. **Unverified:** the tunnel command itself next to this backend; the health check is tested against a stand-in server.
+- `health.ai_endpoint` turns `true` once the tunnel is up and Ollama answers, and `health.ai_model` says whether Ollama lists the model named in `AI_MODEL`.
+- **Where it stands (Saturday 20:15).** The tunnel works: a request for the list of models through `127.0.0.1:8081` is answered. The list is **empty**: no model has been pulled yet. The backend's VM has a `.env` with `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` and `AI_MODEL=qwen2.5:14b`, and no database line; `.env` is never committed (`.gitignore` lists it). A test copy of the backend pointed at the real tunnel reported `ai_endpoint: true` and `ai_model: false`, so the screens say "AI: off" without an `ai.py` and "AI: no model" with a stand-in one. **Unverified:** any real model answer; and the backend that serves the live screen was started before `.env` existed, so it reads it at its next start.
+- **The server's SSH setting, and why the tunnel may stop working.** The AMD server runs in a container set up by its provider. Its SSH server is started from a generated file, `/tmp/amd-oneclick-sshd_config`, which came with `AllowTcpForwarding no`: logging in worked, but the server refused to carry a forwarded port, which is exactly what the tunnel is. On Saturday evening the line was changed to `AllowTcpForwarding local` (forwarding from the client's side to the server's own addresses, the one thing the tunnel needs, and nothing else), with the original kept as `/tmp/amd-oneclick-sshd_config.bak`. Looked at on Saturday 20:05: the file says `local`, the backup says `no`, the running SSH server reports `local`. Because the file is generated and sits in `/tmp`, **a restart of the container most likely puts `no` back** (expected, not observed). The sign: `ssh amd` still logs in, but requests through port 8081 fail and the tunnel prints "open failed: administratively prohibited".
+- **Putting the setting back** (on the server; the login there is the container's administrator): keep a copy of the file, change the one line, check the file, and tell the listening SSH server to read it again:
+
+```
+cp -n /tmp/amd-oneclick-sshd_config /tmp/amd-oneclick-sshd_config.bak
+sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding local/' /tmp/amd-oneclick-sshd_config
+/usr/sbin/sshd -t -f /tmp/amd-oneclick-sshd_config && kill -HUP "$(cat /tmp/amd-oneclick-sshd.pid)"
+```
+
+  `cp -n` copies without overwriting an existing backup. `sed -i` edits the file in place. `sshd -t -f` checks the file without starting anything; only if it passes, `kill -HUP` makes the listening SSH server (its process number is in the `.pid` file) read its file again, and open logins stay open. These lines follow how the SSH server works and what is on the server now; **they have not been run as written**, and how the reload was done on Saturday was not written down.
+- **A way round that needs no port forwarding** (tested on Saturday 20:07 on a spare port, with requests for the model list only). `socat` is a small program that connects two things and passes data between them. In the backend's VM it listens on `127.0.0.1:8081`, the tunnel's port, so `.env` does not change. For every incoming connection it runs one ordinary SSH command on the server, and that command opens a connection to Ollama there and copies data both ways. An ordinary command is not forwarding, so the setting cannot stop it.
+
+```
+socat TCP-LISTEN:8081,bind=127.0.0.1,reuseaddr,fork \
+  'EXEC:ssh -o BatchMode=yes -o ControlMaster=auto -o ControlPersist=600 -o ControlPath=~/.ssh/tattle-amd-%C amd exec 3<>/dev/tcp/127.0.0.1/11434; cat <&3 & cat >&3; kill $!'
+```
+
+  - `fork`: one helper per connection. `reuseaddr`: the port is free again at once after a restart. `BatchMode=yes`: never stop to ask for a password.
+  - `ControlMaster`, `ControlPath`, `ControlPersist=600` are SSH's connection sharing: the first command opens one SSH connection and keeps it for ten minutes after its last use, and later commands travel inside it instead of logging in again. Measured: about 4 s for the first request, then about 0.9 s each, against 0.5 s through the tunnel. The backend's check of the endpoint waits 3 s, so one request by hand comes first (`curl http://127.0.0.1:8081/v1/models`).
+  - The command on the server uses the shell's own way of opening a connection (`/dev/tcp/…` in bash) and two `cat`s. The plan had been `nc 127.0.0.1 11434` (`nc` is the usual small tool for this), but **the server has no `nc` and no `socat`**; with `nc` installed there the command could be just that (untried, and an installed package would be gone after a container restart too).
+  - **Not tested:** a long model answer through it (there is no model), and many requests at once (the SSH server allows 10 commands per connection).
+  - The full steps are in `docs/RUNBOOK.md` under "If the tunnel stops working".
 
 ### 7.8 Privacy labels and the fact-check
 
@@ -848,7 +873,7 @@ Each entry: what we do, why, and what we decided against.
 **Security**
 
 33. **No login for the demo.** Protection is network position (phones cannot reach the backend) plus refusing cross-site requests. A token would be a small change in the backend and in the three pages; decided against for now (section 11).
-33a. **The model server has no key and no public port.** Ollama listens only on the AMD server's own loopback address, so the only way in is an SSH tunnel from the backend's machine, which needs the SSH key. That replaces an API key. *Rejected:* opening Ollama's port on the network (it has no authentication of its own).
+33a. **The model server has no key and no public port.** Ollama listens only on the AMD server's own loopback address, so the only way in is an SSH tunnel from the backend's machine, which needs the SSH key. That replaces an API key. The server's SSH server is set to allow exactly that kind of forwarding and no other (`AllowTcpForwarding local`, section 7.7). *Rejected:* opening Ollama's port on the network (it has no authentication of its own); allowing every kind of forwarding on the server (`yes`), which the tunnel does not need.
 34. **Everything from the network is shown as text, and our pages run only their own script.** See section 11.
 
 ---
@@ -914,7 +939,7 @@ Each entry: what we do, why, and what we decided against.
 - Device names from a real lease file (`--names`).
 - The show screen's detail panel and logo on the real laptop with a real phone, from two metres; `F11` full screen with `Esc` closing a panel (section 6.7).
 - The backend with the code written after 17:55 on Saturday (`GET /api/explain`, the knowledge-base fixes of 18:30): the copy that served the live tests was still the older one at 19:40 and has to be restarted.
-- The SSH tunnel next to this backend, and any real model answer.
+- Any real model answer (the tunnel works and the backend's check sees the server through it; the server has no model yet). That the server's SSH setting survives a container restart (it probably does not: section 7.7), and the lines that put it back.
 - The organizers' Postgres.
 - Timing of the start-up on the real laptop.
 
@@ -926,7 +951,7 @@ Proven by the runs above, and no longer on this list: an iPhone joins with the n
 | --- | --- | --- |
 | 1 | Hotspot up, an iPhone joins, has internet, its DNS is visible on the laptop | Passed by hand, and again with the scripts and the sensor |
 | 2 | Redirected lookups reach the sensor; blocking a domain stops it working on the iPhone | **Passed**: blocked AppsFlyer, reopened Reddit, AppsFlyer's lookups were refused and Reddit kept working |
-| 3 | The model server on the AMD server answers from the backend's machine (through the SSH tunnel) | Half-way (Saturday 19:39): SSH from the backend's VM works and Ollama answers, with no model installed yet. The tunnel itself and `health.ai_endpoint`: not verified |
+| 3 | The model server on the AMD server answers from the backend's machine (through the SSH tunnel) | **Passed for reaching it** (Saturday 20:00): with the tunnel up, the request for the model list is answered and `health.ai_endpoint` is `true` on a test copy of the backend. It took a change to the server's SSH setting (section 7.7). The list is empty: no model installed yet |
 | 4 | The provided Postgres is reachable from a laptop | Unknown to this document (AI's task) |
 | 5 | Find two or three free iPhone apps that light up fast; pick the demo app | **Not done yet** |
 
@@ -1029,24 +1054,24 @@ Then open `http://127.0.0.1:8000/` (the show screen: press `S`, type an app name
 ```sh
 python3 -m venv sensor/.venv && sensor/.venv/bin/pip install -r sensor/requirements-dev.txt   # once
 sensor/.venv/bin/python -m pytest sensor/tests       # 35 tests, about 50 s
-backend/.venv/bin/python -m pytest backend/tests     # 101 tests; 14 database tests are skipped
+backend/.venv/bin/python -m pytest backend/tests     # 103 tests; 14 database tests are skipped
 backend/.venv/bin/python tools/selfcheck.py          # end to end on loopback, 21 checks
 
 # with a throwaway Postgres for the database tests:
 podman run -d --rm --name tattle-pg-test -e POSTGRES_PASSWORD=tattle-test -p 127.0.0.1:55432:5432 docker.io/library/postgres:17-alpine
-TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 115 tests
+TEST_DATABASE_URL=postgresql://postgres:tattle-test@127.0.0.1:55432/postgres backend/.venv/bin/python -m pytest backend/tests   # 117 tests
 podman stop tattle-pg-test
 ```
 
 **The demo, in order** (the full version is `docs/RUNBOOK.md`; the host details are `box/README.md`):
 
-Done once beforehand: the backend venv in the VM; a `.env` in the VM's copy of the repository if the AI or the database is to be used (the start script reads it when the backend starts; none exists yet); copies of `sensor/` and `box/` on the laptop with `sensor/.venv` (`pip install -r sensor/requirements.txt`); lasting allow rules for the sensor in the laptop's application firewall; the laptop set not to sleep; the test iPhone has joined `Tattle-Demo` once.
+Done once beforehand: the backend venv in the VM; a `.env` in the VM's copy of the repository if the AI or the database is to be used (the start script reads it when the backend starts; the demo VM has one since Saturday 20:10, with the AI lines and no database); copies of `sensor/` and `box/` on the laptop with `sensor/.venv` (`pip install -r sensor/requirements.txt`); lasting allow rules for the sensor in the laptop's application firewall; the laptop set not to sleep; the test iPhone has joined `Tattle-Demo` once.
 
 | # | Where | Command | Expect |
 | --- | --- | --- | --- |
 | 1 | Laptop | start the VM; plug in the uplink | |
 | 2 | VM | `bash backend/start.sh` | the addresses to open |
-| 3 | VM, only with `.env` and an AI module | `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd` | no output; `health.ai_endpoint` turns true within 15 s |
+| 3 | VM, for the AI (needs the AI lines in `.env`) | `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd` | no output; `health.ai_endpoint` turns true within 15 s. If the server refuses to forward: section 7.7 |
 | 4 | Laptop | `mullvad disconnect` | VPN off |
 | 5 | Laptop | `sudo bash box/box-up.sh <wifi-interface>` (asks for the hotspot password; up to half a minute) | `HOTSPOT: … runs on <interface>` and `INTERNET: … is on <interface>` |
 | 6 | Laptop | `sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000` | `backend: connected` |
@@ -1122,16 +1147,16 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 | Part | State |
 | --- | --- |
 | Sensor | Complete. 35 tests. Real DNS forwarding, guard list, blocklist, refusal of odd names, the 10-second lifetime cap, batching, surviving a backend outage. **Ran on the real laptop in the hardware test** |
-| Backend core | Complete. 115 tests with Postgres, 101 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
+| Backend core | Complete. 117 tests with Postgres, 103 without. Events, classification, devices, blocking with coverage, sessions, summary, wipe, health, WebSocket, limits, cross-site refusal. **Received a real phone's lookups in the hardware test** |
 | Knowledge base | First version: 4,430 domains from Disconnect plus 65 overrides. Checked against the simulated replay; the live tests showed gaps and one mislabel (apps' own servers, Google's app hosts, Reddit's hosts, Microsoft's sign-in hosts, LinkedIn shown as "Microsoft, social"), which were fixed by hand. The latest fixes (Saturday 18:30) are checked by lookup only, not yet seen on the live screen |
 | Label fact-check | Endpoint complete, tested with stand-in label files. No real labels exist yet |
 | Database layer and history endpoints | Complete, tested against Postgres 17 in a container. Not yet connected to the organizers' Postgres |
-| AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, company explanation, failures, time-outs), and `health.ai_endpoint` is tested against a stand-in server. No real `ai.py`; the tunnel to the real model server has not been tried from this backend |
+| AI hooks | The backend's side is complete and tested with a stand-in module (classification, summary, label verdict, company explanation, failures, time-outs), and the endpoint check and the three AI states (`off`, `no-model`, `on`) are tested against a stand-in server. The tunnel to the real model server works, and a test copy of the backend sees the server through it. No real `ai.py`, and no model on the server yet |
 | Show screen (`frontend/`, served at `/`) | Working against replayed traffic: bubbles, counters, the detail panel (explanation from the list and from a stand-in AI, every server name, blocking a company or a single name), summary, label card, live list, How it works, operator keys, the turtle logo and tab icon. Checked in a headless browser at 1920x1080 and 1440x900, with up to 72 companies and with hostile names (section 6.7). The whole demo path was run once more at feature lock, with and without a stand-in AI and through a backend restart; three bugs found there are fixed. The first version was seen with a real phone at about 18:00; **the detail panel and the logo have not been seen on the real laptop or with a real phone** |
 | Logo | The radar turtle is in the header and the tab icon, chosen by the team. Checked in a headless browser at header size; **not yet seen in a real browser tab** |
 | `/debug` and `/present` | Working. Checked in a scripted browser, including hostile input; `/present` also in one real browser screenshot |
 | Fake sensor and simulated replay | Working |
-| End-to-end self-check | 21 checks. Passed in four of five runs on Saturday 17:40; one run failed two checks that were not recorded. On Saturday 18:35, one of two runs failed one check ("example.com forwarded over UDP" got SERVFAIL, the resolver's "I could not find out") and the other passed. Failures of this kind come from the development VM's own DNS resolver timing out, not from our code, as far as we can tell |
+| End-to-end self-check | 21 checks. Passed in four of five runs on Saturday 17:40; one run failed two checks that were not recorded. On Saturday 18:35, one of two runs failed one check ("example.com forwarded over UDP" got SERVFAIL, the resolver's "I could not find out") and the other passed. On Saturday 20:13, one of four runs failed two checks (which ones was not captured) and three passed. Failures of this kind come from the development VM's own DNS resolver timing out, not from our code, as far as we can tell |
 | Soak test | 10.5 minutes at about 25 lookups a second with two backend restarts: backend memory flat at about 79 MB once the 5,000-lookup buffer was full, sensor at 26 MB, the sensor kept answering and delivered everything it had queued, clients reconnected within 7 s. Two lookups in about 400 failed; traced to the development VM's upstream resolver taking over 3 s |
 | Start script, runbook, quickstarts | Written; the VM-side steps were run. The runbook was re-checked on Saturday evening against the scripts' real output and re-ordered (backend first, two browser windows, `F11`); its laptop-side steps were not run again |
 | Submission text | Drafted in `docs/SUBMISSION.md`, without names. It says openly what is not finished (the AI module, label files, the history screen, a real replay) and lists at its top what to re-check before pasting |
@@ -1156,8 +1181,6 @@ As of the timestamp at the top. "Tested" means tested in the development VM, on 
 
 None open at the time of writing. Three were found and fixed in the feature-lock run (section 17, 19:40). Things seen there and deliberately left as they are, are listed under "Known weak points" in section 6.7. Known limits are in sections 11 and 12.
 
-One leftover: `test.txt` in the repository root is a dummy file that nothing uses.
-
 ### Open questions and pending decisions
 
 1. How the `sensor/` and `box/` folders get onto the laptop (a plain copy is assumed; the transport is undecided).
@@ -1173,7 +1196,7 @@ One leftover: `test.txt` in the repository root is a dummy file that nothing use
 ### Next tasks, by role, in priority order
 
 **BOX**
-0. Restart the backend so the new endpoint and the knowledge-base fixes are live (at 19:40 on Saturday the running copy was still the 17:55 code); then look at the show screen and the detail panel on the real laptop with the real phone, from two metres, in `F11` full screen, and press `Esc` on an open panel; fix what does not read. Decide what to do about the architecture image (small text, drawn before the screen existed).
+0. Restart the backend once more, so that it reads the new `.env` and reports the AI's state (the copy running at 20:15 on Saturday was started before both; with it the show screen's chip stays "AI: off"); then look at the show screen and the detail panel on the real laptop with the real phone, from two metres, in `F11` full screen, and press `Esc` on an open panel; fix what does not read. Decide what to do about the architecture image (small text, drawn before the screen existed).
 1. Write the label files for the demo apps (`data/labels/<app-slug>.json`) as their App Store label texts arrive.
 2. Pick the demo apps with AI (de-risk test 5).
 3. Record a real session from our own phone with `--record`, so replay mode is real traffic.
@@ -1187,7 +1210,7 @@ After feature lock all of this is bug fixing, data (labels, a recording) and reh
 **FRONT:** merged into BOX. Its list is done except the history view and showing the `malformed` count (both optional, and not coming: feature lock).
 
 **AI** (start with `docs/AI-QUICKSTART.md`)
-1. A model pulled into Ollama on the AMD server (on Saturday 19:39 Ollama answered but listed none) and the tunnel up (`health.ai_endpoint` true); `ai.py` with `classify_domains` and `summarize`; check it with `tools/try_ai.py`.
+1. A model pulled into Ollama on the AMD server under the name the backend's `.env` uses (`qwen2.5:14b`; on Saturday 20:05 Ollama listed none), so that `/debug` shows `model ✓`; `ai.py` with `classify_domains` and `summarize`; check it with `tools/try_ai.py`.
 2. `explain_company(company, category, domains)` in `ai.py` (section 7.7): it is what turns the detail panel from one list sentence into the AI showpiece. `tools/try_ai.py` exercises it.
 3. Review the knowledge base and overrides (the notes at the top of `tools/build_kb.py`), including BOX's edits of Saturday 18:30 (section 6.6).
 3a. Optional: `label_check`; the seed file for the demo apps.
@@ -1239,6 +1262,8 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 | 19:40 | At feature lock the whole demo path was run once more in a scripted browser; three things on the judges' screen were wrong | A second session started by keyboard got the new app name glued to the old one ("Demo GameReddit"); a panel's sentence could say "analytics company" under a header saying "advertising"; the "Not identified" panel claimed the AI was being asked when none was running. All fixed in the page. No backend test could have seen them |
 | 19:40 | The page's full-screen key and its `Esc` key do not go together: in that kind of full screen the browser keeps `Esc` | No code change: the runbook says `F11`, where `Esc` reaches the page. Not yet tried on the demo laptop |
 | 19:40 | Where the AI stands at feature lock | SSH to the AMD server works from the backend's machine and Ollama answers, with no model installed; the module that talks to it is not written. Everything on screen works without it |
+| 19:55 | The tunnel to the model server would not carry a connection although logging in worked | The provider's generated SSH settings on the server forbade port forwarding. Changed to allow the one kind the tunnel needs; a container restart will probably undo it, so the steps to put it back are written down, with a relay that needs no forwarding. The relay was planned around a tool the server turned out not to have, and uses the shell's own instead |
+| 20:15 | Our own screen said "AI: on" as soon as the model server answered, with no model on it and no AI module | Three honest states instead, decided in the backend and shown by both pages: off, no model, on |
 
 ---
 
@@ -1246,6 +1271,7 @@ From `docs/CHALLENGES.md`. The AI tool used throughout BOX's work is Claude (Cla
 
 | When | What changed in this guide |
 | --- | --- |
+| Sat 2026-10-10 20:14 | **AI status made honest, and the tunnel's weak spot written down.** `health` gains `ai_module`, `ai_model` and `ai_state`; the show screen's chip and `/debug` show "AI: off", "AI: no model" or "AI: on" from `ai_state` instead of lighting up when the endpoint merely answers (sections 6.3, 6.7, 7.5). The tunnel works since the server's SSH setting was changed; section 7.7 records the setting, how to put it back after a container restart, and a tested relay that needs no port forwarding. The demo VM has a `.env` (AI lines, no database). `test.txt` deleted. Tests: 117 with Postgres, 103 without. Sections 8 (33a), 9, 13, 16, 17 follow. |
 | Sat 2026-10-10 19:45 | **Feature lock.** The whole demo path was run once more against a test backend; three bugs in the show screen were fixed (the app-name field on a second session, a panel sentence that contradicted its header, a false "the AI is asked" line) and what was seen and left alone is listed (section 6.7, section 17). The runbook was re-checked and re-ordered: backend first, two browser windows, `F11` instead of `F` (section 13). New `docs/SUBMISSION.md`, a draft of the submission text. Section 9's list of unverified things no longer contains what the afternoon's runs proved. Model server: SSH works, Ollama answers, no model yet (section 7.7). No interface changed. |
 | Sat 2026-10-10 19:11 | The logo preview page (`/logo`, `frontend/logo/`) was deleted now that the logo is chosen, and its test with it: 115 backend tests with Postgres, 101 without (sections 6.3, 6.7, 13, 16). |
 | Sat 2026-10-10 19:03 | **Logo chosen: variant A**, the turtle seen from above with a radar screen for a shell. It replaces variant C in the header and the tab icon (sections 6.7 and 16). Nothing else changed. |

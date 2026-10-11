@@ -5,6 +5,7 @@ import asyncio
 import http.client
 import importlib
 import importlib.util
+import json
 import os
 import re
 import secrets
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
     kb = Kb.load(ROOT / (env.get("KB_PATH") or "data/kb.json"),
                  ROOT / (env.get("KB_OVERRIDES_PATH") or "data/kb_overrides.json"))
     state, hub = State(kb), Hub()
+    state.health["ai_module"] = ai is not None
     state.seed_ai(read_ai_seed(ROOT / (env.get("AI_CACHE_SEED_PATH") or "data/ai_cache_seed.json")))
     url = env.get("DATABASE_URL")
     db = Db(url, on_health=db_health, on_ready=db_ready) if url else None
@@ -83,7 +85,7 @@ async def lifespan(app: FastAPI):
     if db:
         tasks.append(asyncio.create_task(db.run()))
     if env.get("AI_BASE_URL"):
-        tasks.append(asyncio.create_task(watch_ai_endpoint(env["AI_BASE_URL"], env.get("AI_TOKEN"))))
+        tasks.append(asyncio.create_task(watch_ai_endpoint(env["AI_BASE_URL"], env.get("AI_TOKEN"), env.get("AI_MODEL"))))
     yield
     for task in tasks:
         task.cancel()
@@ -94,9 +96,23 @@ app = FastAPI(title="Tattle", lifespan=lifespan)
 app.add_middleware(Guard)
 
 
-def set_health(key: str, value: object) -> None:
-    if state.health[key] != value:
-        state.health[key] = value
+def ai_state() -> str:
+    """The one word the pages show for the AI, checked in this order. "off": no ai.py, or the model
+    server does not answer. "no-model": it answers, but AI_MODEL is not in its list. "on": the last
+    call of ai.py worked. Anything else (ai.py is there, but no call has worked yet) is "off" too."""
+    health = state.health
+    if ai is None or health["ai_endpoint"] is False:
+        return "off"
+    if health["ai_endpoint"] and health["ai_model"] is False:
+        return "no-model"
+    return "on" if health["ai"] else "off"
+
+
+def set_health(**changes: object) -> None:
+    before = dict(state.health)
+    state.health.update(changes)
+    state.health["ai_state"] = ai_state()
+    if state.health != before:
         hub.publish([{"type": "health", **state.health}])
 
 
@@ -114,25 +130,37 @@ def db_health(ok: bool, problem: str | None) -> None:
         hub.publish([{"type": "health", **state.health}])
 
 
-def ai_endpoint_answers(base_url: str, token: str | None) -> bool:
+def ask_ai_endpoint(base_url: str, token: str | None, model: str | None) -> tuple[bool, bool | None]:
     """One small request to the model server's list of models (the OpenAI-style API has one at /models).
-    A placeholder token is fine: a server that needs none, such as Ollama, ignores it."""
+    A placeholder token is fine: a server that needs none, such as Ollama, ignores it.
+    Returns whether it answered, and whether `model` is in the list (None: no AI_MODEL set, no
+    answer, or a list we cannot read). Ollama lists a model pulled without a tag as "<name>:latest"."""
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # straight there, whatever proxy variables say
     try:
         request = urllib.request.Request(base_url.rstrip("/") + "/models",
                                          headers={"Authorization": f"Bearer {token}"} if token else {})
         with opener.open(request, timeout=3) as response:
-            return response.status == 200
+            if response.status != 200:
+                return False, None
+            body = response.read(1_000_000)
     except (OSError, ValueError, http.client.HTTPException):  # unreachable, refused, or not a URL at all
-        return False
+        return False, None
+    if not model:
+        return True, None
+    try:
+        listed = {entry.get("id") for entry in json.loads(body).get("data") or []}  # an empty Ollama says "data": null
+    except (ValueError, AttributeError, TypeError):
+        return True, None
+    return True, model in listed or f"{model}:latest" in listed
 
 
-async def watch_ai_endpoint(base_url: str, token: str | None) -> None:
-    """Keep health.ai_endpoint current: is the model server reachable (for us: is the SSH tunnel up)?
-    Independent of ai.py: it shows a dead tunnel even before any AI call is made. Runs in a thread,
-    so a server that hangs never holds up the live loop."""
+async def watch_ai_endpoint(base_url: str, token: str | None, model: str | None) -> None:
+    """Keep health.ai_endpoint and health.ai_model current: is the model server reachable (for us:
+    is the SSH tunnel up), and does it have our model? Independent of ai.py: it shows a dead tunnel
+    even before any AI call is made. Runs in a thread, so a server that hangs never holds up the live loop."""
     while True:
-        set_health("ai_endpoint", await asyncio.to_thread(ai_endpoint_answers, base_url, token))
+        answers, listed = await asyncio.to_thread(ask_ai_endpoint, base_url, token, model)
+        set_health(ai_endpoint=answers, ai_model=listed)
         await asyncio.sleep(AI_PROBE_SECONDS)
 
 
@@ -180,7 +208,7 @@ async def classify_worker() -> None:
         except Exception:
             results = None
         ok = isinstance(results, dict)
-        set_health("ai", ok)
+        set_health(ai=ok)
         if state.generation != generation:
             continue  # wiped while we waited
         if not ok:
@@ -203,7 +231,7 @@ async def upgrade_summary(stats: dict, template_summary: dict) -> None:
     except Exception:
         text = None
     text = plain(text, 600)  # a model wrote it: text only, bounded
-    set_health("ai", text is not None)
+    set_health(ai=text is not None)
     if text and state.summary is template_summary:  # still the summary on screen: no wipe or new session since
         by = os.environ.get("AI_MODEL") or "ai"
         hub.publish([state.set_summary(text, by, template_summary["device_id"])])
@@ -217,7 +245,7 @@ async def ask_label_ai(entry: dict, label: dict, stats: dict, lookups: int) -> N
     except Exception:
         text = None
     text = plain(text, 400)
-    set_health("ai", text is not None)
+    set_health(ai=text is not None)
     entry["busy"] = False
     if text:
         entry.update(text=text, lookups=lookups)  # ignored if a wipe or another session replaced the entry meanwhile
@@ -231,7 +259,7 @@ async def ask_explain_ai(entry: dict, company: str, category: str, domains: list
     except Exception:
         text = None
     text = plain(text, 500)
-    set_health("ai", text is not None)
+    set_health(ai=text is not None)
     entry["busy"] = False
     if text:
         entry["text"] = text  # kept until the next wipe: opening the same company again is instant

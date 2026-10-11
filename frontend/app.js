@@ -328,9 +328,11 @@ function renderStatus() {
   const sensor = performance.now() - state.sensorChangedAt < 12000;
   $("chip-sensor").textContent = sensor ? "sensor: live" : "sensor: silent";
   $("chip-sensor").className = "chip " + (sensor ? "on" : "");
-  const ai = state.health.ai_endpoint === true || state.health.ai === true;
-  $("chip-ai").textContent = ai ? "AI: on" : "AI: off";
-  $("chip-ai").className = "chip " + (ai ? "on" : "");
+  // The backend decides: "on" (the AI module's last call worked), "no-model" (the model server
+  // answers but does not have our model), or "off" (no module, or the server does not answer).
+  const ai = state.health.ai_state;
+  $("chip-ai").textContent = ai === "on" ? "AI: on" : ai === "no-model" ? "AI: no model" : "AI: off";
+  $("chip-ai").className = "chip " + (ai === "on" ? "on" : ai === "no-model" ? "warn" : "");
   for (const node of rowNodes.values()) node.last.textContent = ago(node.ts);  // "last seen" keeps counting between lookups
 }
 
@@ -456,9 +458,9 @@ function renderDetail(view) {
   const answer = unknown ? null : explained.get(key), byAi = !!answer && answer.by !== "list";
   // The list's sentence is built here, from the bubble as it is now: the backend's copy dates from
   // when the panel asked, and a company's category can change as more lookups arrive.
-  $("detail-text").textContent = !unknown ? (byAi ? answer.text : listSentence(bubble)) : "No list knows these server names. " + (state.health.ai === true ?
+  $("detail-text").textContent = !unknown ? (byAi ? answer.text : listSentence(bubble)) : "No list knows these server names. " + (state.health.ai_state === "on" ?
     "The AI is asked about each one in the background: a name it can put a company to moves to that company's bubble, marked as a guess." :
-    "No AI is answering right now, so they stay unidentified.");  // health.ai: the last call to the AI module worked
+    "No AI is answering right now, so they stay unidentified.");
   $("detail-facts").textContent = byAi ? listSentence(bubble) : "";
   $("detail-by").textContent = unknown ? "NOT IDENTIFIED" : byAi ? "FROM THE AI" : bubble.guess ? "AI GUESS, NOT ON OUR LIST" : "FROM OUR TRACKER LIST";
   $("detail-by").className = "source" + (byAi ? " ai" : "");

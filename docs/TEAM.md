@@ -252,6 +252,11 @@ async def explain_company(company: str, category: str, domains: list[str]) -> st
   `-N`: no remote command, only the tunnel. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama's port on the server. `ServerAliveInterval=30`: notice a dead connection within about a minute. `ExitOnForwardFailure=yes`: stop at once if the port cannot be forwarded, instead of sitting there uselessly.
 - Backend `.env`: `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` (a placeholder; Ollama ignores it), `AI_MODEL=<model>`.
 - **Added by BOX:** `health` carries `"ai_endpoint"`: `true` or `false` for "the model server answers at `AI_BASE_URL`" (checked every 15 s with a request to `/models`), or `null` when no `AI_BASE_URL` is set. It is about the server and the tunnel. `health.ai` stays what it was: whether the last call made by `ai.py` worked.
+- **Added by BOX (Saturday, after feature lock, asked for by BOX's owner; additions only):** `health` also carries
+  - `"ai_module"`: `true` when the backend loaded an `ai.py`.
+  - `"ai_model"`: `true` or `false` for "`AI_MODEL` is in the model server's list of models" (the same request to `/models`; a model pulled without a tag counts under `<name>:latest`), or `null` when there is no `AI_MODEL`, no answer, or a list that cannot be read.
+  - `"ai_state"`: the one word the pages show, `"off"`, `"no-model"` or `"on"`. Checked in this order: no `ai.py`, or `ai_endpoint` is `false`: `"off"`. `ai_endpoint` is `true` and `ai_model` is `false`: `"no-model"`. `ai` is `true`: `"on"`. Otherwise (an `ai.py` none of whose calls has worked yet): `"off"`.
+  - Why: the show screen said "AI: on" as soon as the endpoint answered, with no model and no `ai.py`. For the AI owner: the name in `AI_MODEL` has to be the one Ollama lists (the demo VM uses `qwen2.5:14b`).
 
 ### Privacy labels (stretch): `data/labels/<app-slug>.json`
 

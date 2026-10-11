@@ -130,6 +130,7 @@ Live phones are "Device 1", "Device 2", … until someone renames them. The repl
 - `db` and `ai` may be `false`: the demo works without both. `db_error` says why when the database is configured but unusable. `kb` is the number of known domains.
 - `malformed` counts lookups we refused because the name was not a plain host name (see section 6). Worth a small counter on screen.
 - `ai_endpoint` says whether the model server answers: `true`, `false`, or `null` when none is configured (as in this run). `ai` is about the last AI call. Both may be red; nothing on screen depends on them.
+- Since Saturday evening `health` has three more fields, not in the examples above (they are from an earlier run): `ai_module` (is there an `ai.py`), `ai_model` (`true`/`false`: is `AI_MODEL` in the model server's list; `null` when unknown) and `ai_state`, which is what to show: `"on"` ("AI: on": an `ai.py` whose last call worked), `"no-model"` ("AI: no model": the server answers but lacks the model) or `"off"` ("AI: off": no `ai.py`, the server does not answer, or no call has worked yet). The exact rule is in `docs/TEAM.md`. The show screen's chip and `/debug` both show `ai_state` and nothing else.
 
 **`wiped`**: forget everything on screen. An empty `blocked` and a `null` `session` follow.
 

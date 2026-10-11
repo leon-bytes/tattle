@@ -4,7 +4,7 @@ One page for the walk to the judges' table. Details and troubleshooting are in `
 
 Placeholders, fill them in once and keep this page open: `<vm-name>` (the VM in libvirt), `<vm-ip>` (its `192.168.122.x` address), `<wifi-interface>` (from `iw dev`).
 
-Re-checked on Saturday evening against what exists. Marked **(untried)** where a step has not been done on the real laptop yet.
+Re-checked on Saturday evening (last at 20:15) against what exists. Marked **(untried)** where a step has not been done on the real laptop yet.
 
 ## Done once, before the day
 
@@ -12,7 +12,7 @@ These are not part of the two minutes. Without them the two minutes don't hold.
 
 - VM: `backend/.venv` exists (backend/README.md). The show screen at `/` needs no build: it is the plain files in `frontend/`.
 - VM: a backend that was started before the last change to `backend/app/` or to the knowledge base still runs the old code. Stop it and start it again (step 2). Files in `frontend/` need only a reload of the page.
-- VM, only for the AI or the database: a `.env` in the repo root (copy `.env.example`, fill in). `start.sh` reads it when the backend starts, so it has to be there before step 2. Without `.env` the backend runs with no AI and no database, and the demo works.
+- VM, only for the AI or the database: a `.env` in the repo root (copy `.env.example`, fill in). `start.sh` reads it when the backend starts, so it has to be there before step 2. Without `.env` the backend runs with no AI and no database, and the demo works. The demo VM has one since Saturday evening: the AI lines, no database.
 - Host: copies of `sensor/` and `box/` in one folder, and `sensor/.venv` exists (box/README.md, step 5).
 - Host: OpenSnitch has lasting allow rules for the sensor (DNS to `9.9.9.9`, HTTP to `<vm-ip>` port 8000).
 - Host: the VM's address is pinned (box/README.md, "A fixed address for the VM"), so `<vm-ip>` never changes.
@@ -27,7 +27,7 @@ The clock starts at the host's desktop. Steps 4 to 6 are typed on the host, in t
 | --- | --- | --- | --- |
 | 1 | Host | `virsh -c qemu:///system start <vm-name>` (skip if the VM is running). Plug in the USB-tethered phone. | `Domain '<vm-name>' started` |
 | 2 | VM, terminal | `bash backend/start.sh` | `Tattle backend starting. / shows the show screen (frontend/).` and the addresses |
-| 3 | VM, own terminal, only with `.env` and an AI module | `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd` | no output; within 15 s the `ai endpoint` pill on `/debug` shows a tick |
+| 3 | VM, own terminal, for the AI (needs the AI lines in `.env`) | `ssh -N -L 8081:127.0.0.1:11434 -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes amd` | no output; within 15 s the `ai endpoint` pill on `/debug` shows a tick |
 | 4 | Host | `mullvad disconnect` | `Disconnected` |
 | 5 | Host | `sudo bash box/box-up.sh <wifi-interface>` and type the hotspot password (it may take up to half a minute) | `HOTSPOT: … runs on <interface>` with `10.42.0.1/24`, and `INTERNET: …` naming the other interface |
 | 6 | Host, own terminal | `sensor/.venv/bin/python sensor/tattle_sensor.py --backend http://<vm-ip>:8000` | `sensor: listening on …`, then `backend: connected` |
@@ -50,9 +50,54 @@ The clock starts at the host's desktop. Steps 4 to 6 are typed on the host, in t
 
 **Step 3, the tunnel to the model server.** Ollama on the AMD server listens on its own `127.0.0.1` only; the tunnel makes it appear as port 8081 in the VM. `-N`: no remote command. `-L 8081:127.0.0.1:11434`: local port 8081 leads to Ollama. `ServerAliveInterval=30`: notice a dead connection. `ExitOnForwardFailure=yes`: stop at once if port 8081 is taken. It needs `AI_BASE_URL=http://127.0.0.1:8081/v1`, `AI_TOKEN=unused` and `AI_MODEL=<model>` in `.env`. Check by hand: `curl http://127.0.0.1:8081/v1/models` (`curl` fetches the address and prints the answer).
 
-- Where this stands (Saturday 19:40): from the VM, `ssh amd` works with the key and Ollama answers, but it lists **no models yet**, and `backend/app/ai.py` does not exist. Until both are there, skip step 3.
-- The tunnel alone turns the show screen's chip to "AI: on" (the chip also follows `ai endpoint`), even while no AI module is loaded. With the chip on and no module, nothing is classified or explained.
-- The demo works without it.
+- Where this stands (Saturday 20:15): the tunnel works and `curl` gets an answer through it, but Ollama lists **no model yet**, and `backend/app/ai.py` does not exist. The demo VM has a `.env` with the three lines above and `AI_MODEL=qwen2.5:14b`; the model pulled on the server has to carry exactly that name.
+- What the screens say about the AI. The chip top right on the show screen and the first AI pill on `/debug` show the same three states:
+  - **"AI: off"**: there is no `ai.py`, or the model server does not answer (tunnel down). Also while `ai.py` is there but none of its calls has worked yet. `/debug` adds the reason in brackets.
+  - **"AI: no model"** (amber): the server answers, but `AI_MODEL` is not in its list of models. Pull the model on the server, or correct the name in `.env` and restart the backend.
+  - **"AI: on"** (green): `ai.py` is loaded and its last call worked. It turns on with the first name the model classifies, seconds after a phone starts looking things up, not at start-up.
+  - `/debug` also shows `ai endpoint ✓/✗` (does the server answer) and `model ✓/✗` (is `AI_MODEL` in its list), whether or not there is an `ai.py`.
+- The demo works without any of it.
+
+### If the tunnel stops working: the server's SSH setting
+
+The AMD server's SSH server is started by the provider's set-up from a generated file, `/tmp/amd-oneclick-sshd_config`. That file came with `AllowTcpForwarding no`: logging in worked, forwarding a port did not. On Saturday evening we changed that line to `AllowTcpForwarding local` (forwarding as in step 3, and nothing more) and kept the original next to it as `/tmp/amd-oneclick-sshd_config.bak`. Looked at on Saturday 20:05: the file says `local`, the backup says `no`, and the running SSH server reports `allowtcpforwarding local`.
+
+**The file is generated, and it lives in `/tmp`. A restart of the server's container most likely brings `no` back** (expected, not observed). How to recognise it: `ssh amd` still logs in, but `curl http://127.0.0.1:8081/v1/models` fails, and the tunnel's terminal prints `open failed: administratively prohibited`.
+
+To apply the change again, on the server:
+
+```sh
+ssh amd
+grep -n AllowTcpForwarding /tmp/amd-oneclick-sshd_config
+cp -n /tmp/amd-oneclick-sshd_config /tmp/amd-oneclick-sshd_config.bak
+sed -i 's/^AllowTcpForwarding no$/AllowTcpForwarding local/' /tmp/amd-oneclick-sshd_config
+/usr/sbin/sshd -t -f /tmp/amd-oneclick-sshd_config && kill -HUP "$(cat /tmp/amd-oneclick-sshd.pid)"
+exit
+```
+
+- `grep -n`: shows the line as it is now (line 20 in the file we saw).
+- `cp -n`: keeps a copy of the original; `-n` never overwrites a backup that is already there.
+- `sed -i 's/…/…/'`: changes that one line in the file itself, and only if it reads exactly `AllowTcpForwarding no`.
+- `sshd -t -f <file>`: checks the file for mistakes without starting anything. Only if that passes (`&&`), `kill -HUP` tells the listening SSH server to read its file again; its process number is in `/tmp/amd-oneclick-sshd.pid`. Logins that are open stay open.
+- Then start the tunnel again (step 3). The login there is the container's administrator, so no `sudo` is needed.
+- These lines follow how OpenSSH works and what is on the server now; **they have not been run as written**. How the reload was done on Saturday was not written down.
+
+**Fallback that needs no port forwarding.** If the setting cannot be changed back, this gives the backend the same `127.0.0.1:8081`, so `.env` stays as it is. Stop the tunnel of step 3 first (it holds the port). In the VM:
+
+```sh
+socat TCP-LISTEN:8081,bind=127.0.0.1,reuseaddr,fork \
+  'EXEC:ssh -o BatchMode=yes -o ControlMaster=auto -o ControlPersist=600 -o ControlPath=~/.ssh/tattle-amd-%C amd exec 3<>/dev/tcp/127.0.0.1/11434; cat <&3 & cat >&3; kill $!'
+curl http://127.0.0.1:8081/v1/models
+```
+
+- `socat TCP-LISTEN:8081,bind=127.0.0.1`: listens on port 8081 of the VM itself, like the tunnel did. `reuseaddr`: the port can be taken again right after a restart. `fork`: one helper per incoming connection.
+- `EXEC:ssh … amd <command>`: each connection runs one SSH command on the server and is wired to its input and output. That is an ordinary remote command, not port forwarding, so the setting above does not stop it.
+- The remote command is `exec 3<>/dev/tcp/127.0.0.1/11434; cat <&3 & cat >&3; kill $!`: the server's shell (bash) opens a connection to Ollama itself and two `cat`s copy in both directions; `kill $!` stops the first `cat` when the request is over.
+- **Why not `nc`:** the plan was `ssh amd nc 127.0.0.1 11434`, but the server has no `nc` (and no `socat`). With `nc` installed there (`apt-get install -y netcat-openbsd`; gone again after a container restart, **untried**) the remote command can simply be `nc 127.0.0.1 11434`. `ssh -W` would not help: it is port forwarding too.
+- `ControlMaster=auto`, `ControlPath=…`, `ControlPersist=600`: the first connection opens one SSH connection and keeps it for ten minutes after its last use; every later one travels inside it instead of logging in again. `%C` makes the file name unique per server. `BatchMode=yes`: never stop to ask for a password.
+- The `curl` line is not only a check: the first request takes about 4 s (it opens the shared connection), longer than the backend's 3-second check waits. After it, a request took about 0.9 s, against 0.5 s through the tunnel.
+- To stop: `Ctrl`+`C`, then `ssh -O exit -o ControlPath=~/.ssh/tattle-amd-%C amd` closes the shared connection.
+- **Tested** on Saturday 20:07 on a spare port, with requests for the model list only. **Not tested:** a long model answer through it (there is no model yet), and many requests at once (the server allows 10 commands per SSH connection).
 
 Measured in the VM: `backend/start.sh` answers requests about a second after Enter. The whole sequence has **not been timed** on the real hardware yet.
 
@@ -78,7 +123,8 @@ Other failures:
 | "sensor: silent" on the show screen | The sensor stopped: step 6 again. Phones recover by themselves within seconds. |
 | A panel is open and `Esc` left full screen instead | `F11` again; close panels with the Close button or a click outside. |
 | The page looks like an old version | Reload it (`Ctrl`+`R`). If a new feature is missing after that, the backend runs old code: step 2 again. |
-| "AI: off" on the show screen (the `ai endpoint` pill on `/debug` shows a cross) | The tunnel dropped: step 3 again. Meanwhile unknown names stay "Not identified", the summary is the built-in one and the detail panel shows the tracker list's sentence. Don't mention it unless asked. |
+| "AI: off" on the show screen | Look at `/debug`. `AI: off (endpoint down)`: the tunnel dropped, step 3 again; if it keeps failing, see "If the tunnel stops working". `AI: off (no ai.py)`: nothing to do at the table. Meanwhile unknown names stay "Not identified", the summary is the built-in one and the detail panel shows the tracker list's sentence. Don't mention it unless asked. |
+| "AI: no model" on the show screen | The model server answers but does not list `AI_MODEL`: the model is not pulled, or the name in `.env` differs from the server's. Same as above meanwhile. |
 | The phone joined but shows nothing | Is cellular data off? Does the sensor's terminal say `backend: connected`? Otherwise: replay mode. |
 | An OpenSnitch prompt appears | Allow, "forever". Lookups stall until it is answered. |
 

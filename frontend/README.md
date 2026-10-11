@@ -33,6 +33,7 @@ Open <http://127.0.0.1:8000/>. Press `S`, type an app name, Enter. The backend r
 - "In plain words": the read-aloud summary from the backend; it names the model when the AI wrote it.
 - "App Store privacy label": shown when `data/labels/` has a label for the session's app name (`GET /api/label-check`, asked every 4 s).
 - "Live: what the phone asks for": the latest server names with the company each belongs to. It gives way to the label card when there is one.
+- Top right, the AI chip shows `health.ai_state` from the backend: "AI: on" (green: `ai.py` is loaded and its last call worked), "AI: no model" (amber: the model server answers but does not list `AI_MODEL`) or "AI: off". An endpoint that merely answers no longer counts as on.
 - The privacy banner, always.
 
 ## Operator keys

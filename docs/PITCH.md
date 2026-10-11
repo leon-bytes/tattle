@@ -26,7 +26,7 @@ The box is one laptop running two things: the hotspot and the sensor on the lapt
 - The iPhone shows "Private Relay is turned off for this network": expected, tap "use without Private Relay".
 - Press `W` twice on the show screen (wipe), so it starts empty. The phone then shows as "Device 1" under the phone in the middle.
 - For the history view: mark our phone as `persist` (on `/debug`, in a second tab) after the wipe and before starting the session. Never a judge's phone.
-- Top right of the show screen: "live" and "sensor: live" are green. "AI: off" is fine; the demo still works without the model and without the database.
+- Top right of the show screen: "live" and "sensor: live" are green. "AI: off" or "AI: no model" is fine; the demo still works without the model and without the database.
 - Backup: the replay ready to start in the VM (`python3 tools/fake_sensor.py data/replays/<file>.jsonl --loop`), backup video on the second laptop (and on a phone).
 
 ## Script (~3:30)

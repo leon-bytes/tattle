@@ -7,9 +7,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import PHONE, event, fake_ai, post_events, until
+from helpers import PHONE, event, fake_ai, post_events, until, wait_for
 
 from app import main
+
+
+NO_HEALTH = {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0,
+             "ai_endpoint": None, "ai_model": None, "ai_module": False, "ai_state": "off"}
 
 
 @pytest.fixture
@@ -30,7 +34,7 @@ def test_snapshot_then_live_hits(client):
         assert snapshot["type"] == "snapshot"
         assert (snapshot["devices"], snapshot["hits"], snapshot["session"]) == ([], [], None)
         assert snapshot["blocked"] == {"companies": [], "domains": [], "covers": {}}
-        assert snapshot["health"] == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0, "ai_endpoint": None}
+        assert snapshot["health"] == NO_HEALTH
 
         assert post_events(client, event("googleads.g.doubleclick.net", 1000.0),
                            event("googleads.g.doubleclick.net", 1000.01, qtype="AAAA"),
@@ -182,7 +186,7 @@ def test_seeded_ai_answers_apply_from_the_start(client):
 
 
 def test_health_tracks_the_sensor(client):
-    assert client.get("/api/health").json() == {"db": False, "db_error": None, "ai": False, "sensor_seen": None, "kb": 28, "malformed": 0, "ai_endpoint": None}
+    assert client.get("/api/health").json() == NO_HEALTH
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()
         client.get("/api/blocklist")  # the sensor's poll is its heartbeat
@@ -197,11 +201,12 @@ class ModelServer:
     def __init__(self):
         outer = self
         self.authorization = []
+        self.models = b'{"object": "list", "data": [{"id": "test-model"}]}'
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 outer.authorization.append(self.headers.get("Authorization"))
-                body = b'{"object": "list", "data": [{"id": "test-model"}]}' if self.path == "/v1/models" else b"{}"
+                body = outer.models if self.path == "/v1/models" else b"{}"
                 self.send_response(200 if self.path == "/v1/models" else 404)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -236,6 +241,55 @@ def test_health_shows_whether_the_ai_endpoint_answers(monkeypatch):
         assert client.get("/api/health").json()["ai"] is False  # "ai" still means: the last call of ai.py worked
         post_events(client, event("ms.applovin.com"))  # and the live loop does not care
         assert until(ws, "hit")["company"] == "AppLovin"
+
+
+def test_ai_state_is_off_no_model_or_on(monkeypatch):
+    """The one word the pages show. "on" needs an ai.py whose last call worked; an endpoint that
+    merely answers is not enough."""
+    async def classify(domains):
+        return {name: {"company": "Example Analytics", "category": "analytics", "confidence": 0.7} for name in domains}
+
+    def health_when(client, **wanted):
+        assert wait_for(lambda: {k: client.get("/api/health").json()[k] for k in wanted} == wanted), client.get("/api/health").json()
+        return client.get("/api/health").json()
+
+    server = ModelServer()
+    monkeypatch.setattr(main, "AI_PROBE_SECONDS", 0.05)
+    monkeypatch.setenv("AI_BASE_URL", server.url)
+    monkeypatch.setenv("AI_MODEL", "test-model")
+    try:
+        monkeypatch.setattr(main, "ai", None)  # the endpoint answers and has the model, but there is no ai.py
+        with TestClient(main.app) as client:
+            assert health_when(client, ai_endpoint=True, ai_model=True)["ai_state"] == "off"
+            assert client.get("/api/health").json()["ai_module"] is False
+            server.models = b'{"object": "list", "data": null}'  # what an Ollama without any model answers
+            assert health_when(client, ai_model=False)["ai_state"] == "off"  # still no ai.py
+
+        fake_ai(monkeypatch, classify=classify)
+        with TestClient(main.app) as client:
+            assert health_when(client, ai_endpoint=True, ai_model=False, ai_module=True)["ai_state"] == "no-model"
+            server.models = b'{"object": "list", "data": [{"id": "other"}, {"id": "test-model:latest"}]}'
+            assert health_when(client, ai_model=True)["ai_state"] == "off"  # all there, but no call has worked yet
+            post_events(client, event("odd.example.io"))
+            health_when(client, ai=True, ai_state="on")
+            server.models = b"not json"  # a list we cannot read says nothing about the model
+            health_when(client, ai_model=None, ai_state="on")
+            server.stop()  # the tunnel drops
+            health_when(client, ai_endpoint=False, ai_model=None, ai_state="off")
+    finally:
+        server.stop()
+
+
+def test_ai_state_without_a_configured_endpoint(monkeypatch):
+    async def classify(domains):
+        return {}
+
+    fake_ai(monkeypatch, classify=classify)
+    with TestClient(main.app) as client:
+        assert client.get("/api/health").json()["ai_state"] == "off"
+        post_events(client, event("odd.example.io"))
+        assert wait_for(lambda: client.get("/api/health").json()["ai_state"] == "on")  # ai.py found its own way to a model
+        assert client.get("/api/health").json()["ai_endpoint"] is None
 
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1:9/v1", "not a url"])

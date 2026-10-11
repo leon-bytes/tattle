@@ -11,7 +11,7 @@
   .banner { color: var(--dim); margin-bottom: 10px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
   .pill { border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
-  .ok { color: #2a9d4b; } .bad { color: #d6453d; } .dim { color: var(--dim); }
+  .ok { color: #2a9d4b; } .bad { color: #d6453d; } .warn { color: #b7791f; } .dim { color: var(--dim); }
   input, select, button { font: inherit; }
   #summary { margin: 8px 0; min-height: 1.4em; }
   .scroll { overflow-x: auto; }
@@ -87,10 +87,15 @@ function renderStatus() {
     return pill;
   };
   const seen = health.sensor_seen ? Date.now() / 1000 - health.sensor_seen : null;
+  // The same three words as the show screen's chip (health.ai_state), and for "off" the reason.
+  const ai = health.ai_state === "on" ? el("span", "AI: on", "pill ok") :
+    health.ai_state === "no-model" ? el("span", "AI: no model", "pill warn") :
+    el("span", "AI: off (" + (!health.ai_module ? "no ai.py" : health.ai_endpoint === false ? "endpoint down" : "last call failed, or none yet") + ")", "pill bad");
   $("status").replaceChildren(
     flag("websocket", connected),
     flag("sensor", seen != null && seen < 10),
-    flag("ai", health.ai), ...(health.ai_endpoint == null ? [] : [flag("ai endpoint", health.ai_endpoint)]),
+    ai, ...(health.ai_endpoint == null ? [] : [flag("ai endpoint", health.ai_endpoint)]),
+    ...(health.ai_model == null ? [] : [flag("model", health.ai_model, "AI_MODEL in the model server's list")]),
     flag("db", health.db, health.db_error),
     el("span", "kb " + (health.kb ?? "?") + " domains", "pill"),
     el("span", counts.hits + " hits, " + counts.blocked + " blocked", "pill"),

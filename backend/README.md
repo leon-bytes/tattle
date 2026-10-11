@@ -132,7 +132,7 @@ Then on `/debug`: pick the device, "Persist on/off", start a session, stop it, a
 | `LABELS_DIR` | `data/labels` | App Store privacy labels for the label check |
 | `DATABASE_URL` | (none) | Postgres connection string; unset means no database |
 | `AI_MODEL` | (none) | used as the `by` name on AI summaries and stored with cached AI answers |
-| `AI_BASE_URL` | (none) | the model server, for `ai.py`. If set, the backend also checks every 15 s whether it answers and shows that as `health.ai_endpoint`. With the SSH tunnel: `http://127.0.0.1:8081/v1` |
+| `AI_BASE_URL` | (none) | the model server, for `ai.py`. If set, the backend also checks every 15 s whether it answers (`health.ai_endpoint`) and whether `AI_MODEL` is in its list of models (`health.ai_model`). With the SSH tunnel: `http://127.0.0.1:8081/v1` |
 | `AI_TOKEN` | (none) | for `ai.py`. `unused` is fine for a server without a key |
 
 The backend reads environment variables only, not `.env` itself. To load `.env` into a shell: `set -a; . ./.env; set +a` (`set -a` exports everything the file defines).
@@ -153,6 +153,6 @@ The backend reads environment variables only, not `.env` itself. To load `.env` 
 - **Untrusted input:** names that are not plain host names are dropped and counted in `health.malformed`. Device ids must be IP addresses, blocked domains must be host names, free text is cut to printable characters and a maximum length. Limits: 1 MB per request, 2,000 events per batch, 500 blocks, 256 devices, 50 WebSocket clients.
 - **Other websites:** every `POST` and every WebSocket connection is refused when it comes from a page on another site (the `Origin` header). There is still no login.
 - **The two pages** (`/debug`, `/present`) insert everything as text and are served with a policy that runs only their own script.
-- **AI is optional.** If `app/ai.py` is missing or fails to import, the backend runs without it and `health.ai` stays `false`. With it, unknown names are sent to `classify_domains` in batches of 10 in the background, `summarize` upgrades the summary after a session stops, `label_check` (if the module has it) supplies the label verdict, and `explain_company` (if the module has it) supplies the text of the show screen's detail panel. A failing or slow call only flips `health.ai`. Details for the AI owner: docs/AI-QUICKSTART.md.
+- **AI is optional.** If `app/ai.py` is missing or fails to import, the backend runs without it and `health.ai` stays `false`. `health.ai_state` is the one word the pages show: `on` (an `ai.py` whose last call worked), `no-model` (the model server answers but does not list `AI_MODEL`) or `off`. With it, unknown names are sent to `classify_domains` in batches of 10 in the background, `summarize` upgrades the summary after a session stops, `label_check` (if the module has it) supplies the label verdict, and `explain_company` (if the module has it) supplies the text of the show screen's detail panel. A failing or slow call only flips `health.ai`. Details for the AI owner: docs/AI-QUICKSTART.md.
 - **Database is optional.** Writes are queued and done in the background; nothing on the live path waits for them. If the server is away, up to 5000 writes wait, oldest dropped first.
 - **Memory bounds:** the last 5000 hits are kept for the snapshot.
